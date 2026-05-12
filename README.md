@@ -257,6 +257,53 @@ This tool is meant for **development and debugging**, not as a hardened internet
 | `db.py` | Database schema and async helpers used by the server. |
 | `tui.py` | Terminal UI layout, theming, search, redelivery, and SQLite reads for the table and inspector. |
 | `requirements.txt` | Python dependencies and minimum versions. |
+| `push_to_github.sh` | Optional helper script to create **Tron_Webhook_Server** on GitHub and push `main` (requires `gh` and login). |
+
+---
+
+## Publish to GitHub (`Tron_Webhook_Server`)
+
+This folder is a **Git** repository on the `main` branch. Creating the repo on github.com requires **your** GitHub login (the automated environment here cannot open a browser or use your password).
+
+### Option A — one script (GitHub CLI)
+
+1. Install [GitHub CLI](https://cli.github.com/) (`gh`) if you do not already have it. A copy may already exist at `~/.local/bin/gh` if you used this machine’s setup before.
+2. Log in once:
+
+   ```bash
+   gh auth login
+   ```
+
+3. From **this project directory**, run:
+
+   ```bash
+   ./push_to_github.sh
+   ```
+
+That creates a **public** repository named **`Tron_Webhook_Server`** under your GitHub user, sets `origin`, and pushes `main`.
+
+To use a **personal access token** instead of interactive login (for example in CI), set `GH_TOKEN` and run the same `gh repo create …` command from the script manually; do not commit the token.
+
+### Option B — website + `git push`
+
+1. On GitHub: **New repository** → name **`Tron_Webhook_Server`** → leave “Initialize with README” **unchecked** → Create.
+2. In this folder:
+
+   ```bash
+   git remote add origin https://github.com/YOUR_USERNAME/Tron_Webhook_Server.git
+   git push -u origin main
+   ```
+
+Replace `YOUR_USERNAME` with your GitHub username.
+
+### Commit author (optional)
+
+If Git warns about name or email when committing, set them for this repo only:
+
+```bash
+git config user.name "Your Name"
+git config user.email "your.email@example.com"
+```
 
 ---
 
