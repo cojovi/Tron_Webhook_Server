@@ -248,6 +248,38 @@ This tool is meant for **development and debugging**, not as a hardened internet
 
 ---
 
+## AI sentiment and voice (Gemini + ElevenLabs)
+
+After each webhook is saved, a **background task** sends a text digest of the request (method, path, query, headers, and a truncated body—any format) to **Google Gemini**. The model returns JSON with **polarity**, **confidence**, **summary**, and a short **spoken_line** for text-to-speech.
+
+Results are stored in SQLite (`sentiment_json` on each row) and shown in the TUI tab **Sentiment**. When ElevenLabs is configured, the **spoken_line** (or summary) is synthesized and played through your speakers **one clip at a time** (a lock prevents overlapping audio if many webhooks arrive quickly).
+
+### Configuration
+
+1. Copy the example env file and edit it:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Fill in at least **`GEMINI_API_KEY`** (from [Google AI Studio](https://aistudio.google.com/apikey)). The same value may be placed in **`GOOGLE_API_KEY`** if you prefer that name.
+
+3. For voice playback, set **`ELEVENLABS_API_KEY`** and **`ELEVENLABS_VOICE_ID`** (from the [ElevenLabs](https://elevenlabs.io) dashboard). Aliases **`ELEVEN_LABS_API_KEY`** / **`ELEVEN_LABS_VOICE_ID`** are also read.
+
+4. Optional environment variables:
+
+   | Variable | Purpose |
+   |----------|---------|
+   | `GEMINI_MODEL` | Override model id (default `gemini-2.0-flash`). |
+   | `ELEVENLABS_MODEL_ID` | ElevenLabs voice model (default `eleven_multilingual_v2`). |
+   | `WEBHOOK_SPEAK_ENABLED` | Set to `0` or `false` to disable speaker output while keeping the Sentiment tab. |
+
+5. **Audio playback** uses **`mpv`** if installed, otherwise **`ffplay`** (from FFmpeg). On Linux you can install one of them, for example: `sudo apt install mpv` or `sudo apt install ffmpeg`.
+
+`main.py` loads **`.env`** from the project directory automatically (`python-dotenv`). **Do not commit `.env`** (it is listed in `.gitignore`).
+
+---
+
 ## Project files (map of the repository)
 
 | File | Purpose |
@@ -256,7 +288,9 @@ This tool is meant for **development and debugging**, not as a hardened internet
 | `server.py` | FastAPI application: catch-all route, `/healthz`, writes to SQLite, enqueues events. |
 | `db.py` | Database schema and async helpers used by the server. |
 | `tui.py` | Terminal UI layout, theming, search, redelivery, and SQLite reads for the table and inspector. |
+| `ai_pipeline.py` | Gemini sentiment call, ElevenLabs TTS, optional local audio playback, DB update. |
 | `requirements.txt` | Python dependencies and minimum versions. |
+| `.env.example` | Template for API keys and toggles (copy to `.env`). |
 | `push_to_github.sh` | Optional helper script to create **Tron_Webhook_Server** on GitHub and push `main` (requires `gh` and login). |
 
 ---
@@ -310,7 +344,7 @@ git config user.email "your.email@example.com"
 ## Requirements summary (for reference)
 
 - **Python:** 3.10+ recommended.
-- **Libraries:** FastAPI, Uvicorn, Textual, aiosqlite, rapidfuzz, httpx (see `requirements.txt`).
+- **Libraries:** FastAPI, Uvicorn, Textual, aiosqlite, rapidfuzz, httpx, python-dotenv (see `requirements.txt`).
 
 ---
 

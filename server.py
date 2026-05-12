@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import queue
 import time
 from collections import defaultdict
@@ -14,6 +15,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 import db as dbmod
+from ai_pipeline import run_sentiment_for_event
 
 ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
@@ -30,8 +32,10 @@ def create_app(
         conn.row_factory = aiosqlite.Row
         await conn.executescript(dbmod.SCHEMA)
         await conn.commit()
+        await dbmod.migrate_events_schema(conn)
         app.state._conn = conn
         app.state.started_at = time.time()
+        app.state.speech_lock = asyncio.Lock()
         yield
         await conn.close()
         app.state._conn = None
@@ -96,6 +100,20 @@ def create_app(
 
         preview = body[:512].decode("utf-8", errors="replace")
         await _enqueue(eid, method, path, preview)
+
+        asyncio.create_task(
+            run_sentiment_for_event(
+                db_path=app.state.db_path,
+                event_queue=event_queue,
+                event_id=eid,
+                method=method,
+                path=path,
+                query=query,
+                headers=headers,
+                body=body,
+                speech_lock=app.state.speech_lock,
+            )
+        )
 
         if method == "HEAD":
             return Response(status_code=200)

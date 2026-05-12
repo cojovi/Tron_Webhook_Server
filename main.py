@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 import uvicorn
 
 from server import create_app
@@ -18,6 +20,8 @@ from tui import InspectorApp
 
 def main() -> None:
     root = Path(__file__).resolve().parent
+    load_dotenv(root / ".env")
+    load_dotenv()
     db_path = Path(os.environ.get("WEBHOOK_DB", str(root / "webhooks.db"))).resolve()
     port = int(os.environ.get("WEBHOOK_PORT", "9876"))
     host = os.environ.get("WEBHOOK_HOST", "0.0.0.0")

@@ -189,7 +189,7 @@ class InspectorApp(App[None]):
     TabPane {{
         padding: 0 1;
     }}
-    #pretty_scroll, #raw_scroll, #hdr_scroll {{
+    #pretty_scroll, #raw_scroll, #hdr_scroll, #sentiment_scroll {{
         height: 1fr;
         border: tall #1f2a44;
         background: #050508;
@@ -257,6 +257,9 @@ class InspectorApp(App[None]):
                     with TabPane("Request Headers", id="hdr"):
                         with VerticalScroll(id="hdr_scroll"):
                             yield Static("", id="hdr_body", markup=False)
+                    with TabPane("Sentiment", id="sentiment"):
+                        with VerticalScroll(id="sentiment_scroll"):
+                            yield Static("", id="sentiment_body", markup=False)
         yield Static(
             "  palette: s search  x clear DB  r redeliver → "
             f"{self._redeliver_base}  q quit  │  Tab: switch inspector tabs",
@@ -301,9 +304,15 @@ class InspectorApp(App[None]):
                 msg = self.event_queue.get_nowait()
             except Empty:
                 break
-            if msg.get("type") == "new_event":
+            t = msg.get("type")
+            if t == "new_event":
                 got = True
                 self._count_this_second += 1
+            elif t == "sentiment_ready":
+                eid = msg.get("id")
+                self.refresh_table()
+                if eid is not None and self._selected_id == int(eid):
+                    self._load_inspector(int(eid))
         if got:
             dot = self.query_one("#status_dot", Static)
             dot.add_class("pulse")
@@ -360,7 +369,11 @@ class InspectorApp(App[None]):
         with self._db() as cx:
             for r in rows:
                 eid = int(r["id"])
-                cur = cx.execute("SELECT headers_json, body FROM events WHERE id = ?", (eid,))
+                cur = cx.execute(
+                    "SELECT headers_json, body, COALESCE(sentiment_json, '') AS sentiment_json "
+                    "FROM events WHERE id = ?",
+                    (eid,),
+                )
                 hr = cur.fetchone()
                 if not hr:
                     continue
@@ -368,7 +381,10 @@ class InspectorApp(App[None]):
                     btxt = (hr["body"] or b"").decode("utf-8", errors="replace")
                 except Exception:
                     btxt = ""
-                hay = f"{r['method']} {r['path']} {hr['headers_json'] or ''} {btxt}"
+                hay = (
+                    f"{r['method']} {r['path']} {hr['headers_json'] or ''} {btxt} "
+                    f"{hr['sentiment_json'] or ''}"
+                )
                 score = int(fuzz.token_set_ratio(needle, hay))
                 if score >= 52:
                     scored.append((score, eid))
@@ -393,6 +409,7 @@ class InspectorApp(App[None]):
     def _clear_inspector(self) -> None:
         self.query_one("#raw_body", Static).update("")
         self.query_one("#hdr_body", Static).update("")
+        self.query_one("#sentiment_body", Static).update("")
         tree = self.query_one("#json_tree", Tree)
         tree.clear()
         self.query_one("#pretty_static", Static).update("")
@@ -440,6 +457,20 @@ class InspectorApp(App[None]):
         hdr_txt = json.dumps({"query": query, "headers": headers}, indent=2, ensure_ascii=False)
         self.query_one("#hdr_body", Static).update(hdr_txt)
 
+        sent_st = self.query_one("#sentiment_body", Static)
+        sj = row["sentiment_json"] if row["sentiment_json"] else None
+        if sj:
+            try:
+                sobj = json.loads(sj)
+                sent_st.update(json.dumps(sobj, indent=2, ensure_ascii=False))
+            except json.JSONDecodeError:
+                sent_st.update(str(sj))
+        else:
+            sent_st.update(
+                "No sentiment stored yet. After a webhook arrives, Gemini runs in the "
+                "background; this tab updates when analysis finishes (or add GEMINI_API_KEY to .env)."
+            )
+
         tree = self.query_one("#json_tree", Tree)
         tree.clear()
         tree.root.set_label("JSON")
@@ -474,7 +505,7 @@ class InspectorApp(App[None]):
 
     def action_cycle_tabs(self) -> None:
         tabs = self.query_one(TabbedContent)
-        order = ["pretty", "raw", "hdr"]
+        order = ["pretty", "raw", "hdr", "sentiment"]
         try:
             cur = str(tabs.active)
         except Exception:

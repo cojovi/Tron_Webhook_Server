@@ -24,10 +24,29 @@ CREATE TABLE IF NOT EXISTS events (
     content_type TEXT,
     body BLOB NOT NULL,
     client_host TEXT,
-    response_status INTEGER NOT NULL DEFAULT 200
+    response_status INTEGER NOT NULL DEFAULT 200,
+    sentiment_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_received_at ON events(received_at DESC);
 """
+
+
+async def migrate_events_schema(conn: aiosqlite.Connection) -> None:
+    """Add columns introduced after first release (safe for existing databases)."""
+    cur = await conn.execute("PRAGMA table_info(events)")
+    rows = await cur.fetchall()
+    names = {row[1] for row in rows}
+    if "sentiment_json" not in names:
+        await conn.execute("ALTER TABLE events ADD COLUMN sentiment_json TEXT")
+        await conn.commit()
+
+
+async def update_sentiment_json(conn: aiosqlite.Connection, event_id: int, payload: str) -> None:
+    await conn.execute(
+        "UPDATE events SET sentiment_json = ? WHERE id = ?",
+        (payload, event_id),
+    )
+    await conn.commit()
 
 
 @asynccontextmanager
