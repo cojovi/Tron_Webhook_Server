@@ -220,6 +220,32 @@ export WEBHOOK_PORT=9880
 python main.py
 ```
 
+### ngrok shows webhooks but the dashboard does not update
+
+Usually one of these:
+
+1. **Stale server on port 9876** — an old `python main.py` is still running in another terminal. ngrok gets `200 OK` from that process, but your **current** TUI is not connected to it. Stop everything on 9876, then start once:
+
+   ```bash
+   wsl bash kill_port.sh
+   source .venv/bin/activate
+   python main.py
+   ```
+
+   You must see `Webhook server ready on 0.0.0.0:9876` before the TUI appears. If you see `address already in use`, the app now **exits** instead of opening a broken dashboard.
+
+2. **WAL split-brain** — an old server wrote events into SQLite WAL files that Windows could not see. The app now forces **DELETE** journal mode on WSL `/mnt/c/` paths. After upgrading, run `wsl bash kill_port.sh`, then `python merge_wal.py` once if needed.
+
+### `unable to open database file` when running from WSL (`/mnt/c/...`)
+
+SQLite **WAL mode** does not work reliably on Windows drives mounted in WSL. The app now uses **DELETE** journal mode automatically. If you still see this error after upgrading, close the app everywhere and run once from Windows in the project folder:
+
+```bash
+python -c "import sqlite3; c=sqlite3.connect('webhooks.db'); c.execute('pragma wal_checkpoint(truncate)'); c.execute('pragma journal_mode=delete'); c.close()"
+```
+
+Then start again from WSL: `python main.py`.
+
 ### `pip install` fails with “externally managed environment”
 
 Your OS is protecting system Python. Always use a **virtual environment** (the steps above). Do not use `--break-system-packages` unless you know why you need it.
@@ -252,7 +278,7 @@ This tool is meant for **development and debugging**, not as a hardened internet
 
 After each webhook is saved, a **background task** sends a text digest of the request (method, path, query, headers, and a truncated body—any format) to **Google Gemini**. The model returns JSON with **polarity**, **confidence**, **summary**, and a short **spoken_line** for text-to-speech.
 
-Results are stored in SQLite (`sentiment_json` on each row) and shown in the TUI tab **Sentiment**. When ElevenLabs is configured, the **spoken_line** (or summary) is synthesized and played through your speakers **one clip at a time** (a lock prevents overlapping audio if many webhooks arrive quickly).
+Results are stored in SQLite (`sentiment_json` on each row) and shown in the TUI tab **Sentiment**. The UI is notified **as soon as** that JSON is written, **before** ElevenLabs playback starts, so the event stream and Sentiment tab stay in sync even if audio generation or playback is slow. When ElevenLabs is configured, the **spoken_line** (or summary) is synthesized and played through your speakers **one clip at a time** (a lock prevents overlapping audio if many webhooks arrive quickly). Gemini calls use a **timeout** (`GEMINI_REQUEST_TIMEOUT`, default 40 seconds) so a stuck model request does not block the rest of the pipeline indefinitely.
 
 ### Configuration
 
@@ -271,10 +297,16 @@ Results are stored in SQLite (`sentiment_json` on each row) and shown in the TUI
    | Variable | Purpose |
    |----------|---------|
    | `GEMINI_MODEL` | Override model id (default `gemini-2.0-flash`). |
+   | `GEMINI_REQUEST_TIMEOUT` | Seconds to wait for Gemini (default `40`); on timeout the pipeline continues with a fallback message and TTS can still run. |
    | `ELEVENLABS_MODEL_ID` | ElevenLabs voice model (default `eleven_multilingual_v2`). |
    | `WEBHOOK_SPEAK_ENABLED` | Set to `0` or `false` to disable speaker output while keeping the Sentiment tab. |
 
-5. **Audio playback** uses **`mpv`** if installed, otherwise **`ffplay`** (from FFmpeg). On Linux you can install one of them, for example: `sudo apt install mpv` or `sudo apt install ffmpeg`.
+5. **Audio playback** (after ElevenLabs returns MP3 bytes) tries, in order:
+   - **`mpv`** on your `PATH` (or `%ProgramFiles%\mpv\mpv.exe` on Windows)
+   - **`ffplay`** (FFmpeg)
+   - **Windows only:** built-in **MediaPlayer** via PowerShell (no extra install)
+   - **Windows only:** **`wsl mpv`** if WSL has `mpv` installed (`sudo apt install mpv` in Ubuntu)
+   On Linux/WSL: `sudo apt install mpv` is enough. If you run `python main.py` from **Windows**, playback is handled by the **TUI process** (Windows MediaPlayer or WSL `mpv`) — not from the background HTTP thread — so speakers work while the inspector is open.
 
 `main.py` loads **`.env`** from the project directory automatically (`python-dotenv`). **Do not commit `.env`** (it is listed in `.gitignore`).
 

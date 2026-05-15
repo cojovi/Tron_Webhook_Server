@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import queue
 import time
 from collections import defaultdict
@@ -17,6 +18,8 @@ from fastapi.responses import JSONResponse
 import db as dbmod
 from ai_pipeline import run_sentiment_for_event
 
+logger = logging.getLogger("webhook.server")
+
 ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 
@@ -28,15 +31,30 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        dbmod.prepare_database_file(db_path)
         conn = await aiosqlite.connect(db_path)
         conn.row_factory = aiosqlite.Row
+        await dbmod.apply_async_sqlite_pragmas(conn, db_path)
+        cur = await conn.execute("PRAGMA journal_mode")
+        mode_row = await cur.fetchone()
+        if dbmod.is_wsl_drvfs_path(db_path) and mode_row and str(mode_row[0]).lower() != "delete":
+            await conn.close()
+            raise RuntimeError(
+                f"Refusing to run with journal_mode={mode_row[0]} on WSL /mnt/c "
+                "(use DELETE so Windows and WSL share webhooks.db). Stop other servers and restart."
+            )
         await conn.executescript(dbmod.SCHEMA)
         await conn.commit()
         await dbmod.migrate_events_schema(conn)
         app.state._conn = conn
         app.state.started_at = time.time()
-        app.state.speech_lock = asyncio.Lock()
+        app.state._sentiment_tasks: set[asyncio.Task[None]] = set()
         yield
+        pending = list(getattr(app.state, "_sentiment_tasks", set()))
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         await conn.close()
         app.state._conn = None
 
@@ -62,7 +80,12 @@ def create_app(
         try:
             event_queue.put_nowait(payload)
         except queue.Full:
-            pass
+            logger.warning(
+                "TUI event queue is full (%s); dropping new_event id=%s — "
+                "increase queue size or slow webhook burst; UI will still catch up via DB poll.",
+                getattr(event_queue, "maxsize", "?"),
+                event_id,
+            )
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
@@ -101,7 +124,7 @@ def create_app(
         preview = body[:512].decode("utf-8", errors="replace")
         await _enqueue(eid, method, path, preview)
 
-        asyncio.create_task(
+        task = asyncio.create_task(
             run_sentiment_for_event(
                 db_path=app.state.db_path,
                 event_queue=event_queue,
@@ -111,9 +134,21 @@ def create_app(
                 query=query,
                 headers=headers,
                 body=body,
-                speech_lock=app.state.speech_lock,
-            )
+            ),
+            name=f"sentiment-{eid}",
         )
+        tasks: set[asyncio.Task[None]] = app.state._sentiment_tasks
+        tasks.add(task)
+
+        def _done(t: asyncio.Task[None]) -> None:
+            tasks.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                logger.warning("sentiment task for event %s failed: %s", eid, exc)
+
+        task.add_done_callback(_done)
 
         if method == "HEAD":
             return Response(status_code=200)

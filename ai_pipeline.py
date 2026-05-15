@@ -21,6 +21,11 @@ import db as dbmod
 
 logger = logging.getLogger("webhook.ai")
 
+
+class PlaybackError(RuntimeError):
+    """No local audio player could play the synthesized MP3."""
+
+
 MAX_INGEST_CHARS = 14_000
 MAX_SPOKEN_CHARS = 2_500
 
@@ -137,58 +142,153 @@ async def call_elevenlabs_tts(
     return r.content
 
 
-def play_mpeg_audio(data: bytes) -> None:
-    """Play MP3/MPEG bytes via mpv (preferred) or ffplay."""
-    if not data:
-        return
+def _win_path_for_wsl(path: Path) -> str:
+    """C:\\foo\\bar -> /mnt/c/foo/bar for wsl.exe."""
+    resolved = path.resolve()
+    drive = resolved.drive.rstrip(":").lower()
+    tail = resolved.as_posix().split(":", 1)[-1]
+    return f"/mnt/{drive}{tail}"
+
+
+def _find_mpv() -> str | None:
     mpv = shutil.which("mpv")
     if mpv:
-        subprocess.run(
-            [mpv, "--no-video", "--really-quiet", "-"],
-            input=data,
-            timeout=180,
-            check=False,
-        )
+        return mpv
+    if os.name != "nt":
+        return None
+    for candidate in (
+        os.path.expandvars(r"%ProgramFiles%\mpv\mpv.exe"),
+        os.path.expandvars(r"%LocalAppData%\Programs\mpv\mpv.exe"),
+    ):
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def _play_with_mpv(mpv: str, path: Path) -> bool:
+    r = subprocess.run(
+        [mpv, "--no-video", "--really-quiet", str(path)],
+        timeout=180,
+        check=False,
+    )
+    return r.returncode == 0
+
+
+def _play_with_ffplay(ffplay: str, path: Path) -> bool:
+    r = subprocess.run(
+        [
+            ffplay,
+            "-nodisp",
+            "-autoexit",
+            "-hide_banner",
+            "-loglevel",
+            "quiet",
+            str(path),
+        ],
+        timeout=180,
+        check=False,
+    )
+    return r.returncode == 0
+
+
+def _play_with_wsl_mpv(path: Path) -> bool:
+    wsl = shutil.which("wsl") or shutil.which("wsl.exe")
+    if not wsl:
+        return False
+    wsl_path = _win_path_for_wsl(path)
+    r = subprocess.run(
+        [wsl, "--", "mpv", "--no-video", "--really-quiet", wsl_path],
+        timeout=180,
+        check=False,
+    )
+    return r.returncode == 0
+
+
+def _play_with_windows_media(path: Path) -> bool:
+    """Play via .NET MediaPlayer (built into Windows; no mpv install required)."""
+    path_ps = str(path.resolve()).replace("'", "''")
+    script = f"""
+Add-Type -AssemblyName presentationCore
+$p = New-Object System.Windows.Media.MediaPlayer
+$p.Open([Uri]::new((Resolve-Path -LiteralPath '{path_ps}').Path))
+$p.Volume = 1.0
+$p.Play()
+$deadline = (Get-Date).AddSeconds(120)
+while (-not $p.NaturalDuration.HasTimeSpan -and (Get-Date) -lt $deadline) {{
+    Start-Sleep -Milliseconds 50
+}}
+while ($p.NaturalDuration.HasTimeSpan -and $p.Position -lt $p.NaturalDuration.TimeSpan) {{
+    Start-Sleep -Milliseconds 100
+}}
+$p.Stop()
+$p.Close()
+"""
+    r = subprocess.run(
+        ["powershell", "-NoProfile", "-Sta", "-Command", script],
+        timeout=180,
+        check=False,
+    )
+    return r.returncode == 0
+
+
+def play_mpeg_audio(data: bytes) -> None:
+    """Play MP3/MPEG bytes (temp file + mpv/ffplay/WSL mpv/Windows MediaPlayer)."""
+    if not data:
         return
-    ffplay = shutil.which("ffplay")
-    if ffplay:
+
+    tmp_path: str | None = None
+    try:
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(data)
+            f.flush()
+            tmp_path = f.name
+        path = Path(tmp_path)
+
+        mpv = _find_mpv()
+        if mpv and _play_with_mpv(mpv, path):
+            logger.info("Played TTS audio via mpv (%s)", mpv)
+            return
+
+        ffplay = shutil.which("ffplay")
+        if ffplay and _play_with_ffplay(ffplay, path):
+            logger.info("Played TTS audio via ffplay")
+            return
+
+        if os.name == "nt":
+            if _play_with_windows_media(path):
+                logger.info("Played TTS audio via Windows MediaPlayer")
+                return
+            if _play_with_wsl_mpv(path):
+                logger.info("Played TTS audio via WSL mpv")
+                return
+
+        raise PlaybackError(
+            "No working audio player (tried mpv, ffplay, Windows MediaPlayer, WSL mpv). "
+            "On Linux/WSL: sudo apt install mpv. On Windows, playback is routed through the TUI."
+        )
+    finally:
+        if tmp_path:
             try:
-                f.write(data)
-                f.flush()
-                subprocess.run(
-                    [
-                        ffplay,
-                        "-nodisp",
-                        "-autoexit",
-                        "-hide_banner",
-                        "-loglevel",
-                        "quiet",
-                        f.name,
-                    ],
-                    timeout=180,
-                    check=False,
-                )
-            finally:
-                try:
-                    os.unlink(f.name)
-                except OSError:
-                    pass
-        return
-    logger.warning("No mpv/ffplay found; install one to hear ElevenLabs playback.")
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
-async def _speak_line(
-    client: httpx.AsyncClient,
-    *,
-    eleven_key: str,
-    voice_id: str,
-    line: str,
-    speech_lock: asyncio.Lock,
-) -> None:
-    mp3 = await call_elevenlabs_tts(client, api_key=eleven_key, voice_id=voice_id, text=line)
-    async with speech_lock:
-        await asyncio.to_thread(play_mpeg_audio, mp3)
+def queue_audio_playback(event_queue: Any, *, mp3: bytes, event_id: int) -> None:
+    """Hand off MP3 bytes to the TUI main process for playback (thread-safe queue)."""
+    if not mp3:
+        raise PlaybackError("ElevenLabs returned empty audio")
+    try:
+        event_queue.put_nowait(
+            {
+                "type": "play_audio",
+                "mp3": mp3,
+                "id": event_id,
+                "ts": time.time(),
+            }
+        )
+    except Exception as exc:
+        raise PlaybackError(f"Could not queue audio for playback: {exc}") from exc
 
 
 async def run_sentiment_for_event(
@@ -201,7 +301,6 @@ async def run_sentiment_for_event(
     query: dict[str, Any],
     headers: dict[str, str],
     body: bytes,
-    speech_lock: asyncio.Lock,
 ) -> None:
     """Analyze webhook with Gemini, store JSON, notify TUI, optionally speak via ElevenLabs."""
     gemini_key = (
@@ -218,75 +317,105 @@ async def run_sentiment_for_event(
     ).strip()
     model = (os.environ.get("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL).strip()
     speak = _env_truthy("WEBHOOK_SPEAK_ENABLED", "1") and bool(eleven_key and voice_id)
+    try:
+        gemini_timeout = float(os.environ.get("GEMINI_REQUEST_TIMEOUT", "40"))
+    except ValueError:
+        gemini_timeout = 40.0
 
     ingest = build_ingest_text(method=method, path=path, query=query, headers=headers, body=body)
     result: dict[str, Any]
 
-    if not gemini_key:
-        result = {
-            "polarity": "unknown",
-            "confidence": 0.0,
-            "summary": "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in .env to enable AI sentiment.",
-            "spoken_line": "Webhook captured. Add your Gemini API key for sentiment analysis.",
-        }
-    else:
+    def _notify_tui() -> None:
         try:
-            async with httpx.AsyncClient() as client:
-                result = await call_gemini_sentiment(
-                    client, api_key=gemini_key, model=model, ingest_text=ingest
-                )
-                for k in ("polarity", "confidence", "summary", "spoken_line"):
-                    result.setdefault(k, None)
-                if speak:
-                    line = result.get("spoken_line") or result.get("summary") or "Webhook event received."
-                    line = str(line).strip()[:MAX_SPOKEN_CHARS]
-                    await _speak_line(
-                        client,
-                        eleven_key=eleven_key,
-                        voice_id=voice_id,
-                        line=line,
-                        speech_lock=speech_lock,
-                    )
+            event_queue.put_nowait({"type": "sentiment_ready", "id": event_id, "ts": time.time()})
         except Exception as exc:
-            logger.warning("Gemini sentiment failed: %s", exc)
+            logger.warning("TUI sentiment_ready notify failed for event %s: %s", event_id, exc)
+
+    async with httpx.AsyncClient() as client:
+        # 1) Gemini sentiment analysis (independent of TTS)
+        if not gemini_key:
             result = {
                 "polarity": "unknown",
                 "confidence": 0.0,
-                "summary": f"AI analysis failed: {exc}",
-                "spoken_line": "Webhook received. Sentiment analysis failed.",
+                "summary": "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in .env to enable AI sentiment.",
+                "spoken_line": "Webhook captured. Add your Gemini API key for sentiment analysis.",
             }
-            if speak:
-                try:
-                    async with httpx.AsyncClient() as client:
-                        await _speak_line(
-                            client,
-                            eleven_key=eleven_key,
-                            voice_id=voice_id,
-                            line=str(result["spoken_line"]),
-                            speech_lock=speech_lock,
-                        )
-                except Exception as tts_exc:
-                    logger.warning("ElevenLabs TTS failed: %s", tts_exc)
-
-    if not gemini_key and speak:
-        try:
-            async with httpx.AsyncClient() as client:
-                await _speak_line(
-                    client,
-                    eleven_key=eleven_key,
-                    voice_id=voice_id,
-                    line=str(result["spoken_line"]),
-                    speech_lock=speech_lock,
+        else:
+            try:
+                result = await asyncio.wait_for(
+                    call_gemini_sentiment(
+                        client, api_key=gemini_key, model=model, ingest_text=ingest
+                    ),
+                    timeout=gemini_timeout,
                 )
-        except Exception as tts_exc:
-            logger.warning("ElevenLabs TTS failed: %s", tts_exc)
+                for k in ("polarity", "confidence", "summary", "spoken_line"):
+                    result.setdefault(k, None)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Gemini timed out after %.1fs (event %s); set GEMINI_REQUEST_TIMEOUT to adjust.",
+                    gemini_timeout,
+                    event_id,
+                )
+                result = {
+                    "polarity": "unknown",
+                    "confidence": 0.0,
+                    "summary": f"Gemini request exceeded {gemini_timeout:.0f} second timeout.",
+                    "spoken_line": "Webhook received. Sentiment analysis timed out.",
+                }
+            except Exception as exc:
+                logger.warning("Gemini sentiment failed: %s", exc)
+                result = {
+                    "polarity": "unknown",
+                    "confidence": 0.0,
+                    "summary": f"Gemini sentiment failed: {exc}",
+                    "spoken_line": "Webhook received. Sentiment analysis failed.",
+                }
 
-    payload = json.dumps(result, ensure_ascii=False)
-    async with aiosqlite.connect(db_path) as wconn:
-        wconn.row_factory = aiosqlite.Row
-        await dbmod.update_sentiment_json(wconn, event_id, payload)
+        # 2) Persist + wake the TUI before TTS so the event stream updates even if playback hangs.
+        try:
+            payload = json.dumps(result, ensure_ascii=False)
+            async with aiosqlite.connect(db_path) as wconn:
+                wconn.row_factory = aiosqlite.Row
+                await dbmod.update_sentiment_json(wconn, event_id, payload)
+        except Exception as exc:
+            logger.warning("sentiment DB write failed for event %s: %s", event_id, exc)
+            try:
+                fallback = {
+                    "polarity": "unknown",
+                    "confidence": 0.0,
+                    "summary": f"Could not store sentiment JSON: {exc}",
+                    "spoken_line": "Webhook received. Could not save sentiment.",
+                }
+                async with aiosqlite.connect(db_path) as wconn:
+                    wconn.row_factory = aiosqlite.Row
+                    await dbmod.update_sentiment_json(
+                        wconn, event_id, json.dumps(fallback, ensure_ascii=False)
+                    )
+            except Exception as exc2:
+                logger.warning("sentiment fallback DB write failed for event %s: %s", event_id, exc2)
 
-    try:
-        event_queue.put_nowait({"type": "sentiment_ready", "id": event_id, "ts": time.time()})
-    except Exception:
-        pass
+        _notify_tui()
+
+        # 3) ElevenLabs TTS → queue playback on TUI thread (Windows needs main-process audio)
+        if speak:
+            line = result.get("spoken_line") or result.get("summary") or "Webhook event received."
+            line = str(line).strip()[:MAX_SPOKEN_CHARS]
+            try:
+                logger.info("event %s: synthesizing speech (%d chars)", event_id, len(line))
+                mp3 = await call_elevenlabs_tts(
+                    client, api_key=eleven_key, voice_id=voice_id, text=line
+                )
+                queue_audio_playback(event_queue, mp3=mp3, event_id=event_id)
+                logger.info("event %s: queued %d bytes for speaker playback", event_id, len(mp3))
+            except Exception as tts_exc:
+                logger.warning("ElevenLabs TTS/playback failed for event %s: %s", event_id, tts_exc)
+                result["tts_error"] = f"ElevenLabs TTS/playback failed: {tts_exc}"
+                try:
+                    async with aiosqlite.connect(db_path) as wconn:
+                        wconn.row_factory = aiosqlite.Row
+                        await dbmod.update_sentiment_json(
+                            wconn, event_id, json.dumps(result, ensure_ascii=False)
+                        )
+                    _notify_tui()
+                except Exception:
+                    pass

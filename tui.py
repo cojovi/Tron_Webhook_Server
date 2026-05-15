@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -15,6 +16,7 @@ from queue import Empty, Queue
 from typing import Any, Iterator
 
 import httpx
+from db import apply_sync_sqlite_pragmas
 from rich.syntax import Syntax
 from rich.text import Text
 from textual import on
@@ -36,6 +38,8 @@ from textual.widgets import (
 CYAN = "#00f0ff"
 MAGENTA = "#ff007f"
 BG = "#0a0a0f"
+
+logger = logging.getLogger("webhook.tui")
 
 
 def _sparkline(values: list[int], width: int = 28) -> str:
@@ -217,16 +221,19 @@ class InspectorApp(App[None]):
         event_queue: Queue[dict[str, Any]],
         listen_port: int,
         server_started: float,
+        speech_lock: threading.Lock | None = None,
     ) -> None:
         super().__init__()
         self.db_path = db_path
         self.event_queue = event_queue
         self.listen_port = listen_port
         self.server_started = server_started
+        self._speech_lock = speech_lock or threading.Lock()
         self._tps_buckets: deque[int] = deque([0] * 36, maxlen=36)
         self._count_this_second = 0
         self._last_bucket_ts = int(time.time())
         self._selected_id: int | None = None
+        self._db_poll_last_max_id: int = 0
         base = os.environ.get("WEBHOOK_REDELIVER_BASE", "http://127.0.0.1:8080").rstrip("/")
         self._redeliver_base = base
 
@@ -277,14 +284,20 @@ class InspectorApp(App[None]):
         self.set_interval(0.05, self._drain_queue)
         self.set_interval(1.0, self._roll_tps_bucket)
         self.set_interval(0.5, self._refresh_header)
+        self.set_interval(1.0, self._poll_db_for_new_rows)
         self.refresh_table()
+        try:
+            with self._db() as cx:
+                row = cx.execute("SELECT IFNULL(MAX(id), 0) AS m FROM events").fetchone()
+            self._db_poll_last_max_id = int(row["m"]) if row else 0
+        except Exception:
+            self._db_poll_last_max_id = 0
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
         cx = sqlite3.connect(self.db_path, timeout=30.0, isolation_level=None)
         cx.row_factory = sqlite3.Row
-        cx.execute("PRAGMA journal_mode=WAL")
-        cx.execute("PRAGMA busy_timeout=5000")
+        apply_sync_sqlite_pragmas(cx, self.db_path)
         try:
             yield cx
         finally:
@@ -296,6 +309,43 @@ class InspectorApp(App[None]):
             self._tps_buckets.append(self._count_this_second)
             self._count_this_second = 0
             self._last_bucket_ts = now
+
+    def _play_audio_async(self, mp3: bytes, event_id: Any) -> None:
+        """Play TTS on a worker thread (serialized); must not run inside uvicorn's thread."""
+
+        def _run() -> None:
+            from ai_pipeline import PlaybackError, play_mpeg_audio
+
+            with self._speech_lock:
+                try:
+                    play_mpeg_audio(mp3)
+                    logger.info(
+                        "Played TTS for event %s (%d bytes)", event_id, len(mp3)
+                    )
+                except PlaybackError as exc:
+                    logger.warning("Playback failed for event %s: %s", event_id, exc)
+                except Exception as exc:
+                    logger.warning(
+                        "Unexpected playback error for event %s: %s", event_id, exc
+                    )
+
+        threading.Thread(
+            target=_run,
+            name=f"aurora-play-{event_id}",
+            daemon=True,
+        ).start()
+
+    def _poll_db_for_new_rows(self) -> None:
+        """Safety net: refresh the table if SQLite has new rows (queue message missed)."""
+        try:
+            with self._db() as cx:
+                row = cx.execute("SELECT IFNULL(MAX(id), 0) AS m FROM events").fetchone()
+            m = int(row["m"]) if row else 0
+        except Exception:
+            return
+        if m > self._db_poll_last_max_id:
+            self._db_poll_last_max_id = m
+            self.refresh_table()
 
     def _drain_queue(self) -> None:
         got = False
@@ -313,6 +363,10 @@ class InspectorApp(App[None]):
                 self.refresh_table()
                 if eid is not None and self._selected_id == int(eid):
                     self._load_inspector(int(eid))
+            elif t == "play_audio":
+                mp3 = msg.get("mp3")
+                if isinstance(mp3, bytes) and mp3:
+                    self._play_audio_async(mp3, msg.get("id"))
         if got:
             dot = self.query_one("#status_dot", Static)
             dot.add_class("pulse")
@@ -343,6 +397,8 @@ class InspectorApp(App[None]):
             )
             rows = cur.fetchall()
         allowed = self._fuzzy_ids_sync(rows, needle) if needle else None
+        if allowed is not None and not allowed and rows:
+            allowed = None
 
         for r in rows:
             eid = int(r["id"])

@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import sqlite3
+import subprocess
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,8 +15,10 @@ from typing import Any
 import aiosqlite
 from rapidfuzz import fuzz
 
+logger = logging.getLogger("webhook.db")
+
+# WAL mode breaks SQLite on WSL paths under /mnt/c (drvfs). Use DELETE everywhere.
 SCHEMA = """
-PRAGMA journal_mode=WAL;
 PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,6 +35,131 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_received_at ON events(received_at DESC);
 """
+
+
+def is_wsl_drvfs_path(path: Path) -> bool:
+    """True when the DB lives on a Windows drive mounted in WSL (/mnt/c/...)."""
+    try:
+        return sys.platform == "linux" and path.resolve().as_posix().startswith("/mnt/")
+    except OSError:
+        return False
+
+
+def _windows_path_for_drvfs(path: Path) -> str | None:
+    """/mnt/c/Users/foo -> C:\\Users\\foo for host-side Python on WSL."""
+    try:
+        parts = path.resolve().as_posix().split("/")
+    except OSError:
+        return None
+    if len(parts) < 3 or parts[0] != "" or parts[1] != "mnt" or len(parts[2]) != 1:
+        return None
+    drive = parts[2].upper()
+    return drive + ":\\" + "\\".join(parts[3:])
+
+
+def _checkpoint_via_windows_host(db_path: Path) -> bool:
+    """Run WAL checkpoint + DELETE journal using Windows Python (WSL interop)."""
+    win_db = _windows_path_for_drvfs(db_path)
+    if not win_db:
+        return False
+    script = (
+        "import sqlite3; "
+        f"c=sqlite3.connect({win_db!r}); "
+        "c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); "
+        "c.execute('PRAGMA journal_mode=DELETE'); "
+        "c.close()"
+    )
+    for launcher in (
+        ["cmd.exe", "/c", "python", "-c", script],
+        ["cmd.exe", "/c", "py", "-3", "-c", script],
+        ["powershell.exe", "-NoProfile", "-Command", script],
+    ):
+        try:
+            subprocess.run(launcher, check=True, capture_output=True, timeout=60)
+            return True
+        except (FileNotFoundError, subprocess.CalledProcessError, OSError) as exc:
+            logger.debug("host checkpoint via %s failed: %s", launcher[0], exc)
+    return False
+
+
+def apply_sync_sqlite_pragmas(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Journal mode safe for Windows, native Linux, and WSL /mnt/c."""
+    if is_wsl_drvfs_path(db_path):
+        conn.execute("PRAGMA journal_mode=DELETE")
+    else:
+        row = conn.execute("PRAGMA journal_mode").fetchone()
+        if row and str(row[0]).lower() == "wal":
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn.execute("PRAGMA journal_mode=DELETE")
+        else:
+            conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("PRAGMA busy_timeout=5000")
+
+
+async def apply_async_sqlite_pragmas(conn: aiosqlite.Connection, db_path: Path) -> None:
+    if is_wsl_drvfs_path(db_path):
+        await conn.execute("PRAGMA journal_mode=DELETE")
+    else:
+        cur = await conn.execute("PRAGMA journal_mode")
+        row = await cur.fetchone()
+        if row and str(row[0]).lower() == "wal":
+            await conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            await conn.execute("PRAGMA journal_mode=DELETE")
+        else:
+            await conn.execute("PRAGMA journal_mode=DELETE")
+    await conn.execute("PRAGMA busy_timeout=5000")
+
+
+def _remove_wal_sidecars(db_path: Path) -> None:
+    """Drop -wal/-shm files so Windows and WSL see the same webhooks.db."""
+    for suffix in ("-wal", "-shm"):
+        side = db_path.parent / f"{db_path.name}{suffix}"
+        if side.exists():
+            try:
+                side.unlink()
+                logger.info("Removed SQLite sidecar %s", side)
+            except OSError as exc:
+                logger.warning("Could not remove %s: %s", side, exc)
+
+
+def prepare_database_file(db_path: Path) -> None:
+    """Ensure the DB file can be opened from this OS (fixes WAL on WSL /mnt/c)."""
+    db_path = db_path.resolve()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not db_path.exists():
+        return
+
+    def _try_open() -> bool:
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        try:
+            apply_sync_sqlite_pragmas(conn, db_path)
+            mode = conn.execute("PRAGMA journal_mode").fetchone()
+            if is_wsl_drvfs_path(db_path) and mode and str(mode[0]).lower() != "delete":
+                raise sqlite3.OperationalError(f"expected DELETE journal on drvfs, got {mode[0]}")
+            conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
+            conn.commit()
+            _remove_wal_sidecars(db_path)
+            return True
+        except sqlite3.OperationalError:
+            return False
+        finally:
+            conn.close()
+
+    if _try_open():
+        return
+
+    if is_wsl_drvfs_path(db_path) and _checkpoint_via_windows_host(db_path):
+        if _try_open():
+            logger.info("Converted database journal mode via Windows host: %s", db_path)
+            return
+
+    raise RuntimeError(
+        f"Cannot open SQLite database at {db_path}. "
+        "If you use WSL with the project on /mnt/c/, close the app on Windows and run:\n"
+        "  python -c \"import sqlite3; c=sqlite3.connect('webhooks.db'); "
+        "c.execute('pragma wal_checkpoint(truncate)'); "
+        "c.execute('pragma journal_mode=delete'); c.close()\""
+    )
 
 
 async def migrate_events_schema(conn: aiosqlite.Connection) -> None:
@@ -51,10 +182,11 @@ async def update_sentiment_json(conn: aiosqlite.Connection, event_id: int, paylo
 
 @asynccontextmanager
 async def connect(db_path: Path):
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    prepare_database_file(db_path)
     conn = await aiosqlite.connect(db_path)
     conn.row_factory = aiosqlite.Row
     try:
+        await apply_async_sqlite_pragmas(conn, db_path)
         await conn.executescript(SCHEMA)
         await conn.commit()
         yield conn
