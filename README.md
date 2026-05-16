@@ -1,6 +1,6 @@
 # Aurora Webhook Collector & Inspector
 
-A **local development tool** that listens for HTTP traffic on any path, **saves everything** to a SQLite database, and shows a **terminal user interface (TUI)** so you can browse requests in real time—without polling a web dashboard.
+A **local development tool** that listens for HTTP traffic on any path, **saves everything** to a SQLite database, and provides both a **terminal user interface (TUI)** and a lightweight **web dashboard** so you can browse requests in real time.
 
 If you have ever wondered “what did Stripe / GitHub / my app actually send?” this tool catches the full request (method, path, query string, headers, raw body) and lets you inspect it from the terminal.
 
@@ -102,6 +102,23 @@ You should see the **Aurora Webhook Inspector** TUI fill the terminal, and the s
 Press **`q`** (quit) inside the TUI, or use **Ctrl+C** if your terminal focuses the process that way.
 
 ---
+
+
+## Web UI (TRON dashboard)
+
+In addition to the TUI, the server now exposes a browser dashboard at:
+
+```
+http://127.0.0.1:9876/ui
+```
+
+What it includes:
+- **Active Queue** (not completed)
+- **Done Today** (completed items)
+- Mark Done / Re-open actions
+- Live polling refresh and text filtering
+
+Completed items are auto-cleared once per day after **1:00 AM** (server local time).
 
 ## Send your first test webhook (from another terminal)
 
@@ -317,8 +334,8 @@ Results are stored in SQLite (`sentiment_json` on each row) and shown in the TUI
 | File | Purpose |
 |------|---------|
 | `main.py` | Entry point: starts **uvicorn** in a background thread, then runs the **Textual** UI. |
-| `server.py` | FastAPI application: catch-all route, `/healthz`, writes to SQLite, enqueues events. |
-| `db.py` | Database schema and async helpers used by the server. |
+| `server.py` | FastAPI application: catch-all route, `/healthz`, `/ui`, `/api/events`, done toggle API, writes to SQLite, enqueues events. |
+| `db.py` | Database schema and async helpers used by the server, including done-state fields and cleanup helpers. |
 | `tui.py` | Terminal UI layout, theming, search, redelivery, and SQLite reads for the table and inspector. |
 | `ai_pipeline.py` | Gemini sentiment call, ElevenLabs TTS, optional local audio playback, DB update. |
 | `requirements.txt` | Python dependencies and minimum versions. |
@@ -377,6 +394,7 @@ git config user.email "your.email@example.com"
 
 - **Python:** 3.10+ recommended.
 - **Libraries:** FastAPI, Uvicorn, Textual, aiosqlite, rapidfuzz, httpx, python-dotenv (see `requirements.txt`).
+- **UI surfaces:** Terminal TUI and browser dashboard (`/ui`) both run from the same `python main.py` process.
 
 ---
 
