@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>TRON Webhook Command Grid</title>
+<style>
+:root{--bg:#060b14;--panel:#0a1324;--cyan:#31f2ff;--orange:#ff9f40;--text:#dff8ff}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui;background:radial-gradient(circle at 20% 0%,#0f1f3a,var(--bg));color:var(--text)}
+.wrap{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+.side{border-right:1px solid #1a3550;padding:18px;background:rgba(5,10,20,.7);backdrop-filter:blur(5px)}
+.brand{font-weight:700;letter-spacing:.15em;color:var(--cyan);text-shadow:0 0 12px #0ff}
+.card{background:linear-gradient(180deg,rgba(49,242,255,.08),rgba(0,0,0,.2));border:1px solid rgba(49,242,255,.4);border-radius:14px;padding:12px;margin:12px 0;box-shadow:0 0 18px rgba(49,242,255,.15)}
+.main{padding:20px} .head{display:flex;justify-content:space-between;align-items:center}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px} .list{max-height:70vh;overflow:auto}
+.item{padding:12px;border:1px solid #24526a;border-radius:10px;margin-bottom:10px;background:rgba(8,15,26,.9)}
+.item.done{opacity:.65;border-color:#2f6635}.pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid;color:var(--orange)}
+button{background:transparent;color:var(--cyan);border:1px solid var(--cyan);border-radius:8px;padding:6px 10px;cursor:pointer}
+input{width:100%;padding:9px;border-radius:8px;border:1px solid #21506f;background:#08121e;color:#dff8ff}
+small{color:#8db9d1}
+</style></head><body>
+<div class='wrap'><aside class='side'><div class='brand'>TRON // WEBHOOK GRID</div>
+<div class='card'><div>LIVE FEED</div><h2 id='count'>0</h2><small>Total events</small></div>
+<div class='card'><div>DONE PURGE</div><h2>01:00</h2><small>Completed tasks auto-clear daily</small></div>
+</aside>
+<main class='main'><div class='head'><h1>Task + Reminder Command Deck</h1><button onclick='refresh()'>Refresh</button></div>
+<input id='q' placeholder='filter by path/method/body preview'><br><br>
+<div class='grid'>
+<section class='card'><h3>ACTIVE QUEUE</h3><div id='active' class='list'></div></section>
+<section class='card'><h3>DONE TODAY</h3><div id='done' class='list'></div></section>
+</div></main></div>
+<script>
+let events=[];
+function esc(s){return (s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
+async function toggleDone(id,done){await fetch('/api/events/'+id+'/done',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({done})});refresh();}
+function draw(){const q=document.getElementById('q').value.toLowerCase();const f=events.filter(e=>`${e.path} ${e.method} ${e.preview||''}`.toLowerCase().includes(q));
+const act=f.filter(e=>!e.is_done), dn=f.filter(e=>e.is_done); document.getElementById('count').textContent=events.length;
+document.getElementById('active').innerHTML=act.map(e=>`<div class='item'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>${new Date(e.received_at*1000).toLocaleString()}</small><div>${esc(e.preview||'')}</div><button onclick='toggleDone(${e.id},true)'>Mark Done</button></div>`).join('')||'<small>No active tasks.</small>';
+document.getElementById('done').innerHTML=dn.map(e=>`<div class='item done'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>done ${new Date((e.done_at||e.received_at)*1000).toLocaleString()}</small><button onclick='toggleDone(${e.id},false)'>Re-open</button></div>`).join('')||'<small>No completed tasks today.</small>';
+}
+async function refresh(){const r=await fetch('/api/events?limit=300');events=(await r.json()).events;draw();}
+document.getElementById('q').addEventListener('input',draw);setInterval(refresh,4000);refresh();
+</script></body></html>

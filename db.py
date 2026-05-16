@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS events (
     body BLOB NOT NULL,
     client_host TEXT,
     response_status INTEGER NOT NULL DEFAULT 200,
-    sentiment_json TEXT
+    sentiment_json TEXT,
+    is_done INTEGER NOT NULL DEFAULT 0,
+    done_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_events_received_at ON events(received_at DESC);
 """
@@ -167,8 +169,17 @@ async def migrate_events_schema(conn: aiosqlite.Connection) -> None:
     cur = await conn.execute("PRAGMA table_info(events)")
     rows = await cur.fetchall()
     names = {row[1] for row in rows}
+    changed = False
     if "sentiment_json" not in names:
         await conn.execute("ALTER TABLE events ADD COLUMN sentiment_json TEXT")
+        changed = True
+    if "is_done" not in names:
+        await conn.execute("ALTER TABLE events ADD COLUMN is_done INTEGER NOT NULL DEFAULT 0")
+        changed = True
+    if "done_at" not in names:
+        await conn.execute("ALTER TABLE events ADD COLUMN done_at REAL")
+        changed = True
+    if changed:
         await conn.commit()
 
 
@@ -246,7 +257,8 @@ async def list_events(
     cur = await conn.execute(
         """
         SELECT id, received_at, method, path, content_type,
-               LENGTH(body) AS body_len, client_host
+               LENGTH(body) AS body_len, client_host, is_done, done_at,
+               substr(cast(body as text),1,220) as preview
         FROM events
         ORDER BY id DESC
         LIMIT ? OFFSET ?
@@ -303,3 +315,14 @@ async def fuzzy_search_event_ids(
             scored.append((score, hid))
     scored.sort(reverse=True)
     return [hid for _, hid in scored[:limit]]
+
+
+async def set_event_done(conn: aiosqlite.Connection, event_id: int, done: bool) -> None:
+    await conn.execute("UPDATE events SET is_done = ?, done_at = CASE WHEN ? = 1 THEN ? ELSE NULL END WHERE id = ?", (1 if done else 0, 1 if done else 0, time.time(), event_id))
+    await conn.commit()
+
+
+async def clear_done_before(conn: aiosqlite.Connection, cutoff_ts: float) -> int:
+    cur = await conn.execute("DELETE FROM events WHERE is_done = 1 AND done_at IS NOT NULL AND done_at < ?", (cutoff_ts,))
+    await conn.commit()
+    return cur.rowcount or 0

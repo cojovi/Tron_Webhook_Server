@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 
 import db as dbmod
 from ai_pipeline import run_sentiment_for_event
@@ -87,6 +87,40 @@ def create_app(
                 event_id,
             )
 
+
+
+    async def _clear_done_daily_if_needed() -> None:
+        now = time.time()
+        last = float(getattr(app.state, "_last_done_clear", 0.0))
+        lt = time.localtime(last) if last else None
+        nt = time.localtime(now)
+        should = (nt.tm_hour >= 1) and (last == 0.0 or lt is None or (lt.tm_year, lt.tm_yday) != (nt.tm_year, nt.tm_yday))
+        if not should:
+            return
+        cutoff = time.mktime((nt.tm_year, nt.tm_mon, nt.tm_mday, 1, 0, 0, nt.tm_wday, nt.tm_yday, nt.tm_isdst))
+        await dbmod.clear_done_before(_conn(), cutoff)
+        app.state._last_done_clear = now
+
+    @app.get("/ui")
+    async def web_ui() -> Response:
+        await _clear_done_daily_if_needed()
+        return FileResponse(Path(__file__).with_name("webui.html"))
+
+    @app.get("/api/events")
+    async def api_events(limit: int = 300, offset: int = 0) -> dict[str, Any]:
+        await _clear_done_daily_if_needed()
+        rows = await dbmod.list_events(_conn(), limit=max(1, min(limit, 1000)), offset=max(0, offset))
+        return {"events": rows}
+
+    @app.post("/api/events/{event_id}/done")
+    async def api_event_done(event_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        done = bool(payload.get("done"))
+        ev = await dbmod.get_event(_conn(), event_id)
+        if ev is None:
+            raise HTTPException(status_code=404, detail="event not found")
+        await dbmod.set_event_done(_conn(), event_id, done)
+        return {"ok": True, "id": event_id, "is_done": done}
+
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
         started = float(getattr(app.state, "started_at", time.time()))
@@ -94,6 +128,7 @@ def create_app(
 
     @app.api_route("/{full_path:path}", methods=ALL_METHODS)
     async def catch_all(request: Request, full_path: str) -> Response:
+        await _clear_done_daily_if_needed()
         method = request.method.upper()
         path = "/" + full_path if full_path else "/"
 
