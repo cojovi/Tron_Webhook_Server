@@ -121,6 +121,13 @@ def create_app(
         await dbmod.set_event_done(_conn(), event_id, done)
         return {"ok": True, "id": event_id, "is_done": done}
 
+    @app.delete("/api/events/{event_id}")
+    async def api_delete_event(event_id: int) -> dict[str, Any]:
+        deleted = await dbmod.delete_event(_conn(), event_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="event not found")
+        return {"ok": True, "id": event_id, "deleted": True}
+
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
         started = float(getattr(app.state, "started_at", time.time()))
@@ -144,6 +151,14 @@ def create_app(
 
         body = await request.body()
         client = request.client.host if request.client else None
+
+        if not dbmod.is_push_webhook_method(method):
+            if method == "HEAD":
+                return Response(status_code=200)
+            return JSONResponse(
+                status_code=200,
+                content={"ok": True, "ignored": True, "method": method},
+            )
 
         eid = await dbmod.insert_event(
             _conn(),

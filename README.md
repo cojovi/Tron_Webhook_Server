@@ -1,8 +1,8 @@
 # Aurora Webhook Collector & Inspector
 
-A **local development tool** that listens for HTTP traffic on any path, **saves everything** to a SQLite database, and provides both a **terminal user interface (TUI)** and a lightweight **web dashboard** so you can browse requests in real time.
+A **local development tool** that listens for HTTP traffic on any path, **persists POST webhooks** to a SQLite database, and provides both a **terminal user interface (TUI)** and a **TRON-themed web dashboard** so you can browse and manage requests in real time.
 
-If you have ever wondered “what did Stripe / GitHub / my app actually send?” this tool catches the full request (method, path, query string, headers, raw body) and lets you inspect it from the terminal.
+If you have ever wondered “what did Stripe / GitHub / my app actually send?” this tool catches the full request (method, path, query string, headers, raw body) for **POST** deliveries—the usual webhook shape—and lets you inspect them from the terminal or browser. Browser noise (**GET**, **HEAD**, **OPTIONS**, etc.) is accepted with `200 OK` but **not stored, shown, or spoken**.
 
 ---
 
@@ -26,12 +26,13 @@ If you have ever wondered “what did Stripe / GitHub / my app actually send?”
 
 | Piece | What it does |
 |--------|----------------|
-| **HTTP server** | Opens a port (default **9876**) and accepts **any path** and several HTTP methods. There is no “wrong URL”—everything is recorded. |
-| **SQLite database** | Stores each request: time, method, path, query parameters, headers, content type, and the **raw body** (JSON, XML, form data, plain text, etc.). |
-| **Queue (pub/sub)** | When a request arrives, the server pushes a small message onto an in-memory queue. The TUI reads that queue so the list updates **immediately** without refreshing a browser. |
-| **TUI** | A full-screen terminal app: list of events on the left, detail tabs on the right, hotkeys at the bottom. |
+| **HTTP server** | Opens a port (default **9876**) and accepts **any path** and several HTTP methods. **POST** (and non-standard **PUSH**) payloads are stored; other methods (e.g. **GET**) return success but are ignored for storage and UI. |
+| **SQLite database** | Stores each tracked request: time, method, path, query parameters, headers, content type, **raw body**, optional **sentiment** JSON, and **done** state. |
+| **Queue (pub/sub)** | When a POST webhook is saved, the server pushes a small message onto an in-memory queue. The TUI reads that queue so the list updates **immediately** without refreshing a browser. |
+| **TUI** | A full-screen terminal app: event stream on the left, detail tabs on the right, hotkeys at the bottom. Lists **POST/PUSH only**. |
+| **Web dashboard** | Browser UI at **`/ui`**: active queue, done today, mark done / re-open / **remove**, live feed count, text filter. **POST/PUSH only**. |
 
-There is also a tiny **`/healthz`** endpoint used for health checks; it is **not** stored as a normal “webhook event” in the same way as arbitrary paths—your integrations should use their own paths (for example `/webhooks/stripe`).
+There is also a tiny **`/healthz`** endpoint used for health checks; it is **not** stored as a webhook event. Your integrations should POST to their own paths (for example `/webhooks/stripe`).
 
 ---
 
@@ -106,19 +107,47 @@ Press **`q`** (quit) inside the TUI, or use **Ctrl+C** if your terminal focuses 
 
 ## Web UI (TRON dashboard)
 
-In addition to the TUI, the server now exposes a browser dashboard at:
+In addition to the TUI, the server exposes a browser dashboard at:
 
 ```
 http://127.0.0.1:9876/ui
 ```
 
 What it includes:
-- **Active Queue** (not completed)
-- **Done Today** (completed items)
-- Mark Done / Re-open actions
-- Live polling refresh and text filtering
+- **LIVE FEED** — **Total events** count (POST/PUSH rows only; removed items are not counted)
+- **Active Queue** — items not marked done
+- **Done Today** — completed items
+- **Mark Done** on active items; **Re-open** and **Remove** on done items
+- **Remove** permanently deletes the row from SQLite and drops it from the feed count
+- Live polling refresh (every few seconds) and a text filter (path, method, body preview)
 
 Completed items are auto-cleared once per day after **1:00 AM** (server local time).
+
+### Web API (used by the dashboard)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/events?limit=300` | List stored events (POST/PUSH only) |
+| `POST` | `/api/events/{id}/done` | Body `{"done": true}` or `{"done": false}` — mark complete or re-open |
+| `DELETE` | `/api/events/{id}` | Permanently delete one event |
+
+---
+
+## POST-only webhooks (what gets tracked)
+
+The collector is tuned for **push-style webhooks**, not browser page loads:
+
+| HTTP method | Stored in DB? | TUI / `/ui` | Gemini / TTS |
+|-------------|---------------|-------------|--------------|
+| **POST** | Yes | Yes | Yes (if configured) |
+| **PUSH** | Yes (non-standard; accepted if a client sends it) | Yes | Yes |
+| **GET**, **HEAD**, **OPTIONS**, **PUT**, etc. | No | No | No |
+
+Ignored requests still return **`200 OK`** with JSON like `{"ok": true, "ignored": true, "method": "GET"}` so probes and favicon fetches do not error.
+
+Use **POST** for real tests and integrations (Stripe, GitHub, custom apps). There is no built-in `category` field—use **path** (`/reminders/dogfood`), **query** (`?source=omi`), **headers** (`X-Category: reminders`), or a **JSON body** to separate types; the TUI fuzzy search can match headers and body text.
+
+---
 
 ## Send your first test webhook (from another terminal)
 
@@ -132,23 +161,39 @@ curl -s -X POST "http://127.0.0.1:9876/demo/hook" \
   -d '{"hello":"world","n":1}'
 ```
 
-**GET with query parameters:**
+**Plain text body (quick test):**
+
+```bash
+curl -s -X POST "http://127.0.0.1:9876/test" \
+  -H "Content-Type: text/plain" \
+  -d "hello from localhost"
+```
+
+**Categorized by path + JSON:**
+
+```bash
+curl -s -X POST "http://127.0.0.1:9876/reminders/dogfood" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"dont forget to get more dogfood"}'
+```
+
+**GET** (ignored — will not appear in the TUI or dashboard):
 
 ```bash
 curl -s "http://127.0.0.1:9876/search?q=webhook&debug=1"
 ```
 
-**Raw XML:**
-
-```bash
-curl -s -X PUT "http://127.0.0.1:9876/xml" \
-  -H "Content-Type: application/xml" \
-  -d '<root><item id="1"/></root>'
-```
-
 If your server uses a different port, replace **9876** with your `WEBHOOK_PORT` value (see below).
 
-Back in the TUI, new rows should appear in the **Event Stream** on the left. Select a row (click or arrow keys) to load the **Pretty**, **Raw**, and **Headers** tabs.
+Back in the TUI or at **`/ui`**, new **POST** rows should appear. Select a row in the TUI (click or arrow keys) to load the **Pretty**, **Raw**, **Headers**, and **Sentiment** tabs.
+
+### Expose localhost with ngrok (optional)
+
+```bash
+ngrok http 9876
+```
+
+Point your webhook URL at the ngrok HTTPS URL (any path). The collector still only **stores POST** payloads.
 
 ---
 
@@ -188,8 +233,9 @@ WEBHOOK_DB=/tmp/my-hooks.db WEBHOOK_PORT=7777 python main.py
 
 ### Left: Event Stream
 
-- Table of recent events: **id**, **method**, **path**, **time**.
-- Methods are color-coded (for example POST vs GET).
+- Table of recent **POST/PUSH** events: **id**, **method**, **path**, **time**.
+- Methods are color-coded (POST is highlighted).
+- **GET** and other non-POST traffic never appear here (see [POST-only webhooks](#post-only-webhooks-what-gets-tracked)).
 - **Search box:** type to **fuzzy-filter** by payload text, headers, path, or method. Clear the box to show everything again.
 
 ### Right: Inspector tabs
@@ -221,8 +267,10 @@ WEBHOOK_DB=/tmp/my-hooks.db WEBHOOK_PORT=7777 python main.py
 By default, SQLite writes **`webhooks.db`** in the same directory as `main.py`. You can open it with any SQLite client, for example:
 
 ```bash
-sqlite3 webhooks.db "SELECT id, method, path FROM events ORDER BY id DESC LIMIT 5;"
+sqlite3 webhooks.db "SELECT id, method, path FROM events WHERE method IN ('POST','PUSH') ORDER BY id DESC LIMIT 5;"
 ```
+
+Older **GET** rows may still exist in the file from before POST-only filtering; they are hidden in the TUI and `/ui` but visible in raw SQL until you delete them.
 
 ---
 
@@ -293,7 +341,7 @@ This tool is meant for **development and debugging**, not as a hardened internet
 
 ## AI sentiment and voice (Gemini + ElevenLabs)
 
-After each webhook is saved, a **background task** sends a text digest of the request (method, path, query, headers, and a truncated body—any format) to **Google Gemini**. The model returns JSON with **polarity**, **confidence**, **summary**, and a short **spoken_line** for text-to-speech.
+After each **POST/PUSH** webhook is saved, a **background task** sends a text digest of the request (method, path, query, headers, and a truncated body—any format) to **Google Gemini**. **GET** and other ignored methods never run this pipeline. The model returns JSON with **polarity**, **confidence**, **summary**, and a short **spoken_line** for text-to-speech.
 
 Results are stored in SQLite (`sentiment_json` on each row) and shown in the TUI tab **Sentiment**. The UI is notified **as soon as** that JSON is written, **before** ElevenLabs playback starts, so the event stream and Sentiment tab stay in sync even if audio generation or playback is slow. When ElevenLabs is configured, the **spoken_line** (or summary) is synthesized and played through your speakers **one clip at a time** (a lock prevents overlapping audio if many webhooks arrive quickly). Gemini calls use a **timeout** (`GEMINI_REQUEST_TIMEOUT`, default 40 seconds) so a stuck model request does not block the rest of the pipeline indefinitely.
 
@@ -334,9 +382,10 @@ Results are stored in SQLite (`sentiment_json` on each row) and shown in the TUI
 | File | Purpose |
 |------|---------|
 | `main.py` | Entry point: starts **uvicorn** in a background thread, then runs the **Textual** UI. |
-| `server.py` | FastAPI application: catch-all route, `/healthz`, `/ui`, `/api/events`, done toggle API, writes to SQLite, enqueues events. |
-| `db.py` | Database schema and async helpers used by the server, including done-state fields and cleanup helpers. |
-| `tui.py` | Terminal UI layout, theming, search, redelivery, and SQLite reads for the table and inspector. |
+| `server.py` | FastAPI application: catch-all route, `/healthz`, `/ui`, REST event API, POST-only persistence, enqueues events. |
+| `webui.html` | TRON-themed browser dashboard (active/done queues, remove, live feed count). |
+| `db.py` | Database schema and async helpers: insert/list/delete events, POST filter, done state, daily done purge. |
+| `tui.py` | Terminal UI layout, theming, search, redelivery, POST-filtered event stream and inspector. |
 | `ai_pipeline.py` | Gemini sentiment call, ElevenLabs TTS, optional local audio playback, DB update. |
 | `requirements.txt` | Python dependencies and minimum versions. |
 | `.env.example` | Template for API keys and toggles (copy to `.env`). |
@@ -395,6 +444,7 @@ git config user.email "your.email@example.com"
 - **Python:** 3.10+ recommended.
 - **Libraries:** FastAPI, Uvicorn, Textual, aiosqlite, rapidfuzz, httpx, python-dotenv (see `requirements.txt`).
 - **UI surfaces:** Terminal TUI and browser dashboard (`/ui`) both run from the same `python main.py` process.
+- **Tracked methods:** **POST** and **PUSH** only for storage, display, and optional TTS.
 
 ---
 

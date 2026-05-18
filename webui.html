@@ -13,6 +13,7 @@
 .item{padding:12px;border:1px solid #24526a;border-radius:10px;margin-bottom:10px;background:rgba(8,15,26,.9)}
 .item.done{opacity:.65;border-color:#2f6635}.pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid;color:var(--orange)}
 button{background:transparent;color:var(--cyan);border:1px solid var(--cyan);border-radius:8px;padding:6px 10px;cursor:pointer}
+.actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 input{width:100%;padding:9px;border-radius:8px;border:1px solid #21506f;background:#08121e;color:#dff8ff}
 small{color:#8db9d1}
 </style></head><body>
@@ -28,13 +29,16 @@ small{color:#8db9d1}
 </div></main></div>
 <script>
 let events=[];
+const pushMethods=new Set(['POST','PUSH']);
+function isPush(e){return pushMethods.has((e.method||'').toUpperCase());}
 function esc(s){return (s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
 async function toggleDone(id,done){await fetch('/api/events/'+id+'/done',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({done})});refresh();}
-function draw(){const q=document.getElementById('q').value.toLowerCase();const f=events.filter(e=>`${e.path} ${e.method} ${e.preview||''}`.toLowerCase().includes(q));
+async function removeEvent(id){await fetch('/api/events/'+id,{method:'DELETE'});refresh();}
+function draw(){const q=document.getElementById('q').value.toLowerCase();const f=events.filter(isPush).filter(e=>`${e.path} ${e.method} ${e.preview||''}`.toLowerCase().includes(q));
 const act=f.filter(e=>!e.is_done), dn=f.filter(e=>e.is_done); document.getElementById('count').textContent=events.length;
 document.getElementById('active').innerHTML=act.map(e=>`<div class='item'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>${new Date(e.received_at*1000).toLocaleString()}</small><div>${esc(e.preview||'')}</div><button onclick='toggleDone(${e.id},true)'>Mark Done</button></div>`).join('')||'<small>No active tasks.</small>';
-document.getElementById('done').innerHTML=dn.map(e=>`<div class='item done'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>done ${new Date((e.done_at||e.received_at)*1000).toLocaleString()}</small><button onclick='toggleDone(${e.id},false)'>Re-open</button></div>`).join('')||'<small>No completed tasks today.</small>';
+document.getElementById('done').innerHTML=dn.map(e=>`<div class='item done'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>done ${new Date((e.done_at||e.received_at)*1000).toLocaleString()}</small><div class='actions'><button onclick='toggleDone(${e.id},false)'>Re-open</button><button onclick='removeEvent(${e.id})'>Remove</button></div></div>`).join('')||'<small>No completed tasks today.</small>';
 }
-async function refresh(){const r=await fetch('/api/events?limit=300');events=(await r.json()).events;draw();}
+async function refresh(){const r=await fetch('/api/events?limit=300');events=(await r.json()).events.filter(isPush);draw();}
 document.getElementById('q').addEventListener('input',draw);setInterval(refresh,4000);refresh();
 </script></body></html>

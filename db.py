@@ -17,6 +17,14 @@ from rapidfuzz import fuzz
 
 logger = logging.getLogger("webhook.db")
 
+# Webhook payloads (user-facing "push"); exclude browser probes (GET/HEAD/etc.).
+PUSH_WEBHOOK_METHODS: frozenset[str] = frozenset({"POST", "PUSH"})
+
+
+def is_push_webhook_method(method: str) -> bool:
+    return method.upper() in PUSH_WEBHOOK_METHODS
+
+
 # WAL mode breaks SQLite on WSL paths under /mnt/c (drvfs). Use DELETE everywhere.
 SCHEMA = """
 PRAGMA busy_timeout=5000;
@@ -260,6 +268,7 @@ async def list_events(
                LENGTH(body) AS body_len, client_host, is_done, done_at,
                substr(cast(body as text),1,220) as preview
         FROM events
+        WHERE method IN ('POST', 'PUSH')
         ORDER BY id DESC
         LIMIT ? OFFSET ?
         """,
@@ -273,6 +282,12 @@ async def delete_all_events(conn: aiosqlite.Connection) -> int:
     cur = await conn.execute("DELETE FROM events")
     await conn.commit()
     return cur.rowcount or 0
+
+
+async def delete_event(conn: aiosqlite.Connection, event_id: int) -> bool:
+    cur = await conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    await conn.commit()
+    return (cur.rowcount or 0) > 0
 
 
 async def fuzzy_search_event_ids(
@@ -289,6 +304,7 @@ async def fuzzy_search_event_ids(
     cur = await conn.execute(
         """
         SELECT id, method, path, headers_json, body FROM events
+        WHERE method IN ('POST', 'PUSH')
         ORDER BY id DESC LIMIT ?
         """,
         (scan_limit,),
