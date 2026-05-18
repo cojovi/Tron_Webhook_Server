@@ -16,7 +16,7 @@ from queue import Empty, Queue
 from typing import Any, Iterator
 
 import httpx
-from db import apply_sync_sqlite_pragmas
+from db import apply_sync_sqlite_pragmas, is_push_webhook_method
 from rich.syntax import Syntax
 from rich.text import Text
 from textual import on
@@ -356,6 +356,8 @@ class InspectorApp(App[None]):
                 break
             t = msg.get("type")
             if t == "new_event":
+                if not is_push_webhook_method(str(msg.get("method", ""))):
+                    continue
                 got = True
                 self._count_this_second += 1
             elif t == "sentiment_ready":
@@ -392,7 +394,9 @@ class InspectorApp(App[None]):
             cur = cx.execute(
                 """
                 SELECT id, received_at, method, path, content_type, LENGTH(body) AS blen
-                FROM events ORDER BY id DESC LIMIT 800
+                FROM events
+                WHERE method IN ('POST', 'PUSH')
+                ORDER BY id DESC LIMIT 800
                 """
             )
             rows = cur.fetchall()
