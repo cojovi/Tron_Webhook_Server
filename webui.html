@@ -1,44 +1,681 @@
 <!doctype html>
-<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>TRON Webhook Command Grid</title>
-<style>
-:root{--bg:#060b14;--panel:#0a1324;--cyan:#31f2ff;--orange:#ff9f40;--text:#dff8ff}
-*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui;background:radial-gradient(circle at 20% 0%,#0f1f3a,var(--bg));color:var(--text)}
-.wrap{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
-.side{border-right:1px solid #1a3550;padding:18px;background:rgba(5,10,20,.7);backdrop-filter:blur(5px)}
-.brand{font-weight:700;letter-spacing:.15em;color:var(--cyan);text-shadow:0 0 12px #0ff}
-.card{background:linear-gradient(180deg,rgba(49,242,255,.08),rgba(0,0,0,.2));border:1px solid rgba(49,242,255,.4);border-radius:14px;padding:12px;margin:12px 0;box-shadow:0 0 18px rgba(49,242,255,.15)}
-.main{padding:20px} .head{display:flex;justify-content:space-between;align-items:center}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px} .list{max-height:70vh;overflow:auto}
-.item{padding:12px;border:1px solid #24526a;border-radius:10px;margin-bottom:10px;background:rgba(8,15,26,.9)}
-.item.done{opacity:.65;border-color:#2f6635}.pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid;color:var(--orange)}
-button{background:transparent;color:var(--cyan);border:1px solid var(--cyan);border-radius:8px;padding:6px 10px;cursor:pointer}
-.actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-input{width:100%;padding:9px;border-radius:8px;border:1px solid #21506f;background:#08121e;color:#dff8ff}
-small{color:#8db9d1}
-</style></head><body>
-<div class='wrap'><aside class='side'><div class='brand'>TRON // WEBHOOK GRID</div>
-<div class='card'><div>LIVE FEED</div><h2 id='count'>0</h2><small>Total events</small></div>
-<div class='card'><div>DONE PURGE</div><h2>01:00</h2><small>Completed tasks auto-clear daily</small></div>
-</aside>
-<main class='main'><div class='head'><h1>Task + Reminder Command Deck</h1><button onclick='refresh()'>Refresh</button></div>
-<input id='q' placeholder='filter by path/method/body preview'><br><br>
-<div class='grid'>
-<section class='card'><h3>ACTIVE QUEUE</h3><div id='active' class='list'></div></section>
-<section class='card'><h3>DONE TODAY</h3><div id='done' class='list'></div></section>
-</div></main></div>
-<script>
-let events=[];
-const pushMethods=new Set(['POST','PUSH']);
-function isPush(e){return pushMethods.has((e.method||'').toUpperCase());}
-function esc(s){return (s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
-async function toggleDone(id,done){await fetch('/api/events/'+id+'/done',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({done})});refresh();}
-async function removeEvent(id){await fetch('/api/events/'+id,{method:'DELETE'});refresh();}
-function draw(){const q=document.getElementById('q').value.toLowerCase();const f=events.filter(isPush).filter(e=>`${e.path} ${e.method} ${e.preview||''}`.toLowerCase().includes(q));
-const act=f.filter(e=>!e.is_done), dn=f.filter(e=>e.is_done); document.getElementById('count').textContent=events.length;
-document.getElementById('active').innerHTML=act.map(e=>`<div class='item'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>${new Date(e.received_at*1000).toLocaleString()}</small><div>${esc(e.preview||'')}</div><button onclick='toggleDone(${e.id},true)'>Mark Done</button></div>`).join('')||'<small>No active tasks.</small>';
-document.getElementById('done').innerHTML=dn.map(e=>`<div class='item done'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>done ${new Date((e.done_at||e.received_at)*1000).toLocaleString()}</small><div class='actions'><button onclick='toggleDone(${e.id},false)'>Re-open</button><button onclick='removeEvent(${e.id})'>Remove</button></div></div>`).join('')||'<small>No completed tasks today.</small>';
-}
-async function refresh(){const r=await fetch('/api/events?limit=300');events=(await r.json()).events.filter(isPush);draw();}
-document.getElementById('q').addEventListener('input',draw);setInterval(refresh,4000);refresh();
-</script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRON Webhook Command Grid</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #020617;
+      --bg-panel: rgba(15, 23, 42, 0.72);
+      --slate: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --cyan: #00ffff;
+      --cyan-dim: #31f2ff;
+      --green: #22c55e;
+      --orange: #ff9f40;
+      --magenta: #ff00ff;
+      --email: #4ade80;
+      --done: #86efac;
+      --glass: rgba(15, 23, 42, 0.55);
+      --border: rgba(0, 255, 255, 0.35);
+      --glow: 0 0 20px rgba(0, 255, 255, 0.25);
+      --font-ui: "Fira Sans", system-ui, sans-serif;
+      --font-mono: "Fira Code", ui-monospace, monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-ui);
+      color: var(--text);
+      background: var(--bg);
+      overflow-x: hidden;
+    }
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 255, 255, 0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 50%, rgba(255, 0, 255, 0.06), transparent),
+        linear-gradient(180deg, #0f172a 0%, #020617 45%, #000 100%);
+      pointer-events: none;
+    }
+    .bg-grid::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 255, 0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black, transparent);
+    }
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      pointer-events: none;
+      opacity: 0.06;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.4) 2px,
+        rgba(0, 0, 0, 0.4) 4px
+      );
+    }
+    .app {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(260px, 300px) 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+    }
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 1.25rem;
+      background: var(--glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    @media (max-width: 900px) {
+      .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+    .brand {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 0.85rem;
+      letter-spacing: 0.2em;
+      color: var(--cyan);
+      text-shadow: 0 0 12px var(--cyan), 0 0 24px rgba(0, 255, 255, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .brand svg { flex-shrink: 0; filter: drop-shadow(0 0 6px var(--cyan)); }
+    .stat-card {
+      position: relative;
+      padding: 1rem 1.1rem;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0, 255, 255, 0.08), rgba(0, 0, 0, 0.35));
+      border: 1px solid var(--border);
+      box-shadow: var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+    .stat-card::before, .stat-card::after {
+      content: "";
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-color: var(--cyan);
+      border-style: solid;
+      opacity: 0.7;
+    }
+    .stat-card::before { top: 6px; left: 6px; border-width: 2px 0 0 2px; }
+    .stat-card::after { bottom: 6px; right: 6px; border-width: 0 2px 2px 0; }
+    .stat-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 2.5rem;
+      font-weight: 600;
+      line-height: 1.1;
+      margin: 0.25rem 0;
+      color: var(--text);
+      text-shadow: 0 0 16px rgba(0, 255, 255, 0.5);
+    }
+    .stat-value.pulse { animation: countPulse 0.5s ease; }
+    @keyframes countPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); color: var(--cyan); }
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      animation: blink 2s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .main {
+      padding: 1.25rem 1.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      min-width: 0;
+    }
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .topbar h1 {
+      margin: 0;
+      font-size: clamp(1.25rem, 3vw, 1.75rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .topbar h1 span {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      letter-spacing: 0.08em;
+      margin-top: 0.25rem;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 200px;
+    }
+    .search-wrap svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    #q {
+      width: 100%;
+      padding: 0.65rem 0.75rem 0.65rem 2.5rem;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 255, 255, 0.25);
+      background: rgba(2, 6, 23, 0.85);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    #q:focus {
+      outline: none;
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(0, 255, 255, 0.15);
+    }
+    .btn {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.55rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--cyan);
+      background: rgba(0, 255, 255, 0.08);
+      color: var(--cyan);
+      cursor: pointer;
+      transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .btn:hover {
+      background: rgba(0, 255, 255, 0.18);
+      box-shadow: 0 0 16px rgba(0, 255, 255, 0.35);
+    }
+    .btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    .btn-ghost {
+      border-color: rgba(148, 163, 184, 0.4);
+      color: var(--muted);
+      background: transparent;
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--muted); box-shadow: none; }
+    .btn-done {
+      border-color: var(--green);
+      color: var(--green);
+      background: rgba(34, 197, 94, 0.1);
+    }
+    .btn-done:hover { box-shadow: 0 0 14px rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.2); }
+    .btn-danger {
+      border-color: rgba(248, 113, 113, 0.6);
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.08);
+    }
+    .btn-danger:hover { box-shadow: 0 0 14px rgba(239, 68, 68, 0.3); }
+    .deck {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+    @media (max-width: 1100px) { .deck { grid-template-columns: 1fr; } }
+    .deck .span-all { grid-column: 1 / -1; }
+    .panel {
+      --accent: var(--cyan);
+      position: relative;
+      border-radius: 14px;
+      padding: 1rem 1rem 0.75rem;
+      background: var(--glass);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 12%, transparent), inset 0 1px 0 rgba(255,255,255,0.05);
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel[data-lane="tasks"] { --accent: var(--orange); }
+    .panel[data-lane="reminders"] { --accent: var(--magenta); }
+    .panel[data-lane="email"] { --accent: var(--email); }
+    .panel[data-lane="done"] { --accent: var(--done); }
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    }
+    .panel-title {
+      margin: 0;
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      color: var(--accent);
+      text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 50%, transparent);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .panel-title svg { opacity: 0.9; }
+    .panel-meta {
+      font-size: 0.65rem;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      text-align: right;
+      line-height: 1.4;
+    }
+    .badge-count {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      color: var(--accent);
+    }
+    .list {
+      flex: 1;
+      overflow: auto;
+      max-height: min(36vh, 420px);
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) transparent;
+    }
+    .list::-webkit-scrollbar { width: 6px; }
+    .list::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--accent) 50%, transparent);
+      border-radius: 3px;
+    }
+    .item {
+      position: relative;
+      padding: 0.85rem 0.85rem 0.85rem 1rem;
+      margin-bottom: 0.65rem;
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.75);
+      border: 1px solid rgba(51, 65, 85, 0.8);
+      border-left: 3px solid var(--accent);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .item:hover {
+      border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+      box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 15%, transparent);
+    }
+    .item.done {
+      opacity: 0.75;
+      border-left-color: var(--done);
+    }
+    .item-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+    .pill {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid var(--orange);
+      color: var(--orange);
+      background: rgba(255, 159, 64, 0.1);
+      letter-spacing: 0.05em;
+    }
+    .path {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .time {
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+    .preview {
+      font-size: 0.8rem;
+      color: #cbd5e1;
+      margin: 0.5rem 0;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+    .empty {
+      padding: 2rem 1rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      line-height: 1.6;
+    }
+    .empty code {
+      color: var(--accent);
+      background: rgba(0,0,0,0.3);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+    }
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 9999;
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      border: 1px solid var(--cyan);
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--cyan);
+      box-shadow: var(--glow);
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (prefers-reduced-motion: reduce) {
+      .status-dot, .stat-value.pulse { animation: none; }
+      .toast { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="scanlines" aria-hidden="true"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+        TRON // WEBHOOK GRID
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Live feed</div>
+        <div id="count" class="stat-value">0</div>
+        <small class="stat-label">Total POST events</small>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Done purge</div>
+        <div class="stat-value" style="font-size:1.75rem">01:00</div>
+        <small class="stat-label">Auto-clear after 1 AM local</small>
+      </div>
+      <div class="status-row">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="statusText">Grid online · polling 4s</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1>
+          Task + Reminder Command Deck
+          <span>Universal webhook collector · port 9876</span>
+        </h1>
+        <div class="toolbar">
+          <button type="button" class="btn" onclick="refresh()" aria-label="Refresh events">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            Sync
+          </button>
+        </div>
+      </header>
+
+      <div class="search-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="q" type="search" placeholder="Filter path / method / body…" aria-label="Filter events" autocomplete="off">
+      </div>
+
+      <div class="deck">
+        <section class="panel" data-lane="active">
+          <div class="panel-head">
+            <h2 class="panel-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              Active Queue
+            </h2>
+            <div class="panel-meta"><span class="badge-count" id="badge-active">0</span><br>catch-all paths</div>
+          </div>
+          <div id="active" class="list" role="list"></div>
+        </section>
+
+        <section class="panel" data-lane="tasks">
+          <div class="panel-head">
+            <h2 class="panel-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              Tasks
+            </h2>
+            <div class="panel-meta"><span class="badge-count" id="badge-tasks">0</span><br>POST /tasks</div>
+          </div>
+          <div id="tasks" class="list" role="list"></div>
+        </section>
+
+        <section class="panel" data-lane="reminders">
+          <div class="panel-head">
+            <h2 class="panel-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              Reminders
+            </h2>
+            <div class="panel-meta"><span class="badge-count" id="badge-reminders">0</span><br>POST /reminders</div>
+          </div>
+          <div id="reminders" class="list" role="list"></div>
+        </section>
+
+        <section class="panel" data-lane="email">
+          <div class="panel-head">
+            <h2 class="panel-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="m22 6-10 7L2 6"/></svg>
+              Email
+            </h2>
+            <div class="panel-meta"><span class="badge-count" id="badge-email">0</span><br>POST /email</div>
+          </div>
+          <div id="email" class="list" role="list"></div>
+        </section>
+
+        <section class="panel span-all" data-lane="done">
+          <div class="panel-head">
+            <h2 class="panel-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
+              Done Today
+            </h2>
+            <div class="panel-meta"><span class="badge-count" id="badge-done">0</span><br>completed archive</div>
+          </div>
+          <div id="done" class="list" role="list" style="max-height:28vh"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    let events = [];
+    let lastCount = -1;
+    const pushMethods = new Set(['POST', 'PUSH']);
+
+    const LANES = [
+      { key: 'active', el: 'active', badge: 'badge-active', empty: 'No active items in the catch-all queue.', hint: '/test' },
+      { key: 'tasks', el: 'tasks', badge: 'badge-tasks', empty: 'No tasks yet.', hint: '/tasks' },
+      { key: 'reminders', el: 'reminders', badge: 'badge-reminders', empty: 'No reminders yet.', hint: '/reminders' },
+      { key: 'email', el: 'email', badge: 'badge-email', empty: 'No email payloads yet.', hint: '/email' },
+    ];
+
+    function isPush(e) { return pushMethods.has((e.method || '').toUpperCase()); }
+    function esc(s) { return (s || '').replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
+    function normPath(path) {
+      const p = (path || '/').split('?')[0];
+      return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p || '/';
+    }
+    function laneForPath(path) {
+      const p = normPath(path).toLowerCase();
+      if (p === '/tasks') return 'tasks';
+      if (p === '/reminders') return 'reminders';
+      if (p === '/email') return 'email';
+      return 'active';
+    }
+    function matchesFilter(e, q) {
+      return !q || `${e.path} ${e.method} ${e.preview || ''}`.toLowerCase().includes(q);
+    }
+
+    function renderActive(e) {
+      return `<article class="item" role="listitem">
+        <div class="item-top"><span class="pill">${esc(e.method)}</span><span class="path">${esc(e.path)}</span></div>
+        <div class="time">${new Date(e.received_at * 1000).toLocaleString()}</div>
+        <div class="preview">${esc(e.preview || '')}</div>
+        <div class="actions">
+          <button type="button" class="btn btn-done" onclick="toggleDone(${e.id},true)">Mark Done</button>
+        </div>
+      </article>`;
+    }
+
+    function renderDone(e) {
+      return `<article class="item done" role="listitem">
+        <div class="item-top"><span class="pill">${esc(e.method)}</span><span class="path">${esc(e.path)}</span></div>
+        <div class="time">done ${new Date((e.done_at || e.received_at) * 1000).toLocaleString()}</div>
+        <div class="actions">
+          <button type="button" class="btn btn-ghost" onclick="toggleDone(${e.id},false)">Re-open</button>
+          <button type="button" class="btn btn-danger" onclick="removeEvent(${e.id})">Remove</button>
+        </div>
+      </article>`;
+    }
+
+    function emptyHtml(msg, hint) {
+      return `<div class="empty">${esc(msg)}<br><code>POST ${esc(hint)}</code></div>`;
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(showToast._tid);
+      showToast._tid = setTimeout(() => t.classList.remove('show'), 2800);
+    }
+
+    async function toggleDone(id, done) {
+      await fetch('/api/events/' + id + '/done', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ done }),
+      });
+      refresh();
+    }
+
+    async function removeEvent(id) {
+      await fetch('/api/events/' + id, { method: 'DELETE' });
+      refresh();
+    }
+
+    function draw() {
+      const q = document.getElementById('q').value.toLowerCase().trim();
+      const f = events.filter(isPush).filter(e => matchesFilter(e, q));
+      const open = f.filter(e => !e.is_done);
+      const done = f.filter(e => e.is_done);
+      const lanes = { active: [], tasks: [], reminders: [], email: [] };
+      for (const e of open) lanes[laneForPath(e.path)].push(e);
+
+      const countEl = document.getElementById('count');
+      if (f.length !== lastCount && lastCount >= 0 && f.length > lastCount) {
+        showToast('+' + (f.length - lastCount) + ' signal(s) on the grid');
+        countEl.classList.add('pulse');
+        setTimeout(() => countEl.classList.remove('pulse'), 500);
+      }
+      lastCount = f.length;
+      countEl.textContent = f.length;
+
+      for (const lane of LANES) {
+        document.getElementById(lane.badge).textContent = lanes[lane.key].length;
+        document.getElementById(lane.el).innerHTML = lanes[lane.key].length
+          ? lanes[lane.key].map(renderActive).join('')
+          : emptyHtml(lane.empty, lane.hint);
+      }
+      document.getElementById('badge-done').textContent = done.length;
+      document.getElementById('done').innerHTML = done.length
+        ? done.map(renderDone).join('')
+        : emptyHtml('No completed tasks today.', '/any');
+    }
+
+    async function refresh() {
+      try {
+        const r = await fetch('/api/events?limit=300');
+        const data = await r.json();
+        events = (data.events || []).filter(isPush);
+        document.getElementById('statusText').textContent = 'Grid online · ' + new Date().toLocaleTimeString();
+        draw();
+      } catch (err) {
+        document.getElementById('statusText').textContent = 'Link severed · retrying…';
+      }
+    }
+
+    document.getElementById('q').addEventListener('input', draw);
+    document.addEventListener('keydown', e => {
+      if (e.key === '/' && document.activeElement !== document.getElementById('q')) {
+        e.preventDefault();
+        document.getElementById('q').focus();
+      }
+    });
+    setInterval(refresh, 4000);
+    refresh();
+  </script>
+</body>
+</html>
