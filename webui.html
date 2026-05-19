@@ -9,7 +9,8 @@
 .brand{font-weight:700;letter-spacing:.15em;color:var(--cyan);text-shadow:0 0 12px #0ff}
 .card{background:linear-gradient(180deg,rgba(49,242,255,.08),rgba(0,0,0,.2));border:1px solid rgba(49,242,255,.4);border-radius:14px;padding:12px;margin:12px 0;box-shadow:0 0 18px rgba(49,242,255,.15)}
 .main{padding:20px} .head{display:flex;justify-content:space-between;align-items:center}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px} .list{max-height:70vh;overflow:auto}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px} .list{max-height:36vh;overflow:auto}
+.grid .span-all{grid-column:1/-1}
 .item{padding:12px;border:1px solid #24526a;border-radius:10px;margin-bottom:10px;background:rgba(8,15,26,.9)}
 .item.done{opacity:.65;border-color:#2f6635}.pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid;color:var(--orange)}
 button{background:transparent;color:var(--cyan);border:1px solid var(--cyan);border-radius:8px;padding:6px 10px;cursor:pointer}
@@ -24,20 +25,37 @@ small{color:#8db9d1}
 <main class='main'><div class='head'><h1>Task + Reminder Command Deck</h1><button onclick='refresh()'>Refresh</button></div>
 <input id='q' placeholder='filter by path/method/body preview'><br><br>
 <div class='grid'>
-<section class='card'><h3>ACTIVE QUEUE</h3><div id='active' class='list'></div></section>
-<section class='card'><h3>DONE TODAY</h3><div id='done' class='list'></div></section>
+<section class='card'><h3>ACTIVE QUEUE</h3><small>POST paths except /tasks, /reminders, /email</small><div id='active' class='list'></div></section>
+<section class='card'><h3>TASKS</h3><small>POST → /tasks</small><div id='tasks' class='list'></div></section>
+<section class='card'><h3>REMINDERS</h3><small>POST → /reminders</small><div id='reminders' class='list'></div></section>
+<section class='card'><h3>EMAIL</h3><small>POST → /email</small><div id='email' class='list'></div></section>
+<section class='card span-all'><h3>DONE TODAY</h3><div id='done' class='list'></div></section>
 </div></main></div>
 <script>
 let events=[];
 const pushMethods=new Set(['POST','PUSH']);
 function isPush(e){return pushMethods.has((e.method||'').toUpperCase());}
 function esc(s){return (s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
+function normPath(path){const p=(path||'/').split('?')[0];return p.length>1&&p.endsWith('/')?p.slice(0,-1):p||'/';}
+function laneForPath(path){const p=normPath(path).toLowerCase();if(p==='/tasks')return 'tasks';if(p==='/reminders')return 'reminders';if(p==='/email')return 'email';return 'active';}
+function matchesFilter(e,q){return !q||`${e.path} ${e.method} ${e.preview||''}`.toLowerCase().includes(q);}
+function renderActive(e){return `<div class='item'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>${new Date(e.received_at*1000).toLocaleString()}</small><div>${esc(e.preview||'')}</div><button onclick='toggleDone(${e.id},true)'>Mark Done</button></div>`;}
+function renderDone(e){return `<div class='item done'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>done ${new Date((e.done_at||e.received_at)*1000).toLocaleString()}</small><div class='actions'><button onclick='toggleDone(${e.id},false)'>Re-open</button><button onclick='removeEvent(${e.id})'>Remove</button></div></div>`;}
 async function toggleDone(id,done){await fetch('/api/events/'+id+'/done',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({done})});refresh();}
 async function removeEvent(id){await fetch('/api/events/'+id,{method:'DELETE'});refresh();}
-function draw(){const q=document.getElementById('q').value.toLowerCase();const f=events.filter(isPush).filter(e=>`${e.path} ${e.method} ${e.preview||''}`.toLowerCase().includes(q));
-const act=f.filter(e=>!e.is_done), dn=f.filter(e=>e.is_done); document.getElementById('count').textContent=events.length;
-document.getElementById('active').innerHTML=act.map(e=>`<div class='item'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>${new Date(e.received_at*1000).toLocaleString()}</small><div>${esc(e.preview||'')}</div><button onclick='toggleDone(${e.id},true)'>Mark Done</button></div>`).join('')||'<small>No active tasks.</small>';
-document.getElementById('done').innerHTML=dn.map(e=>`<div class='item done'><div><span class='pill'>${esc(e.method)}</span> <b>${esc(e.path)}</b></div><small>done ${new Date((e.done_at||e.received_at)*1000).toLocaleString()}</small><div class='actions'><button onclick='toggleDone(${e.id},false)'>Re-open</button><button onclick='removeEvent(${e.id})'>Remove</button></div></div>`).join('')||'<small>No completed tasks today.</small>';
+function draw(){
+  const q=document.getElementById('q').value.toLowerCase().trim();
+  const f=events.filter(isPush).filter(e=>matchesFilter(e,q));
+  const open=f.filter(e=>!e.is_done);
+  const done=f.filter(e=>e.is_done);
+  document.getElementById('count').textContent=f.length;
+  const lanes={active:[],tasks:[],reminders:[],email:[]};
+  for(const e of open){lanes[laneForPath(e.path)].push(e);}
+  document.getElementById('active').innerHTML=lanes.active.map(renderActive).join('')||'<small>No active items.</small>';
+  document.getElementById('tasks').innerHTML=lanes.tasks.map(renderActive).join('')||'<small>No tasks yet. POST to /tasks</small>';
+  document.getElementById('reminders').innerHTML=lanes.reminders.map(renderActive).join('')||'<small>No reminders yet. POST to /reminders</small>';
+  document.getElementById('email').innerHTML=lanes.email.map(renderActive).join('')||'<small>No email yet. POST to /email</small>';
+  document.getElementById('done').innerHTML=done.map(renderDone).join('')||'<small>No completed tasks today.</small>';
 }
 async function refresh(){const r=await fetch('/api/events?limit=300');events=(await r.json()).events.filter(isPush);draw();}
 document.getElementById('q').addEventListener('input',draw);setInterval(refresh,4000);refresh();

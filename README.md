@@ -115,8 +115,11 @@ http://127.0.0.1:9876/ui
 
 What it includes:
 - **LIVE FEED** — **Total events** count (POST/PUSH rows only; removed items are not counted)
-- **Active Queue** — items not marked done
-- **Done Today** — completed items
+- **Active Queue** — open items on any path **except** `/tasks`, `/reminders`, and `/email`
+- **Tasks** — open items posted to **`/tasks`** (path match is case-insensitive)
+- **Reminders** — open items posted to **`/reminders`** (e.g. `/Reminders`)
+- **Email** — open items posted to **`/email`**
+- **Done Today** — completed items from all lanes
 - **Mark Done** on active items; **Re-open** and **Remove** on done items
 - **Remove** permanently deletes the row from SQLite and drops it from the feed count
 - Live polling refresh (every few seconds) and a text filter (path, method, body preview)
@@ -169,13 +172,31 @@ curl -s -X POST "http://127.0.0.1:9876/test" \
   -d "hello from localhost"
 ```
 
-**Categorized by path + JSON:**
+**Reminders lane** (`/reminders`):
 
 ```bash
-curl -s -X POST "http://127.0.0.1:9876/reminders/dogfood" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"dont forget to get more dogfood"}'
+curl -s -X POST "http://127.0.0.1:9876/reminders" \
+  -H "Content-Type: text/plain" \
+  -d "dont forget to get more dogfood"
 ```
+
+**Tasks lane** (`/tasks`):
+
+```bash
+curl -s -X POST "http://127.0.0.1:9876/tasks" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Ship webhook UI","due":"today"}'
+```
+
+**Email lane** (`/email`):
+
+```bash
+curl -s -X POST "http://127.0.0.1:9876/email" \
+  -H "Content-Type: text/plain" \
+  -d "New message from client@example.com"
+```
+
+**Active queue** (any other path, e.g. `/test` or `/demo/hook`):
 
 **GET** (ignored — will not appear in the TUI or dashboard):
 
