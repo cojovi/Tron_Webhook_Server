@@ -3,562 +3,482 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TRON Webhook Command Grid</title>
+  <title>TRON · Webhook Command Grid</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #020617;
-      --bg-panel: rgba(15, 23, 42, 0.72);
-      --slate: #1e293b;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --cyan: #00ffff;
-      --cyan-dim: #31f2ff;
-      --green: #22c55e;
+      --void: #030712;
+      --deep: #0f172a;
+      --panel: rgba(15, 23, 42, 0.65);
+      --cyan: #01cdfe;
+      --cyan-bright: #00ffff;
+      --pink: #ff71ce;
+      --purple: #b967ff;
+      --mint: #05ffa1;
       --orange: #ff9f40;
       --magenta: #ff00ff;
       --email: #4ade80;
-      --done: #86efac;
-      --glass: rgba(15, 23, 42, 0.55);
-      --border: rgba(0, 255, 255, 0.35);
-      --glow: 0 0 20px rgba(0, 255, 255, 0.25);
-      --font-ui: "Fira Sans", system-ui, sans-serif;
-      --font-mono: "Fira Code", ui-monospace, monospace;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --font-hud: "Share Tech Mono", "Fira Code", monospace;
+      --font-code: "Fira Code", ui-monospace, monospace;
     }
     *, *::before, *::after { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: var(--font-ui);
+      font-family: var(--font-hud);
       color: var(--text);
-      background: var(--bg);
+      background: var(--void);
       overflow-x: hidden;
     }
-    .bg-grid {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      background:
-        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 255, 255, 0.12), transparent),
-        radial-gradient(ellipse 60% 40% at 100% 50%, rgba(255, 0, 255, 0.06), transparent),
-        linear-gradient(180deg, #0f172a 0%, #020617 45%, #000 100%);
-      pointer-events: none;
-    }
-    .bg-grid::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(0, 255, 255, 0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 255, 255, 0.04) 1px, transparent 1px);
-      background-size: 48px 48px;
-      mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black, transparent);
+    #particles, #horizon { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+    #horizon { opacity: 0.55; }
+    .vignette {
+      position: fixed; inset: 0; z-index: 1; pointer-events: none;
+      background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.75) 100%);
     }
     .scanlines {
-      position: fixed;
-      inset: 0;
-      z-index: 9998;
-      pointer-events: none;
-      opacity: 0.06;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0, 0, 0, 0.4) 2px,
-        rgba(0, 0, 0, 0.4) 4px
-      );
+      position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0.07;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.5) 2px, rgba(0,0,0,0.5) 4px);
     }
-    .app {
-      position: relative;
-      z-index: 1;
-      display: grid;
-      grid-template-columns: minmax(260px, 300px) 1fr;
-      min-height: 100vh;
-    }
-    @media (max-width: 900px) {
-      .app { grid-template-columns: 1fr; }
-    }
-    .sidebar {
-      border-right: 1px solid var(--border);
+    .chromatic { position: fixed; inset: 0; z-index: 2; pointer-events: none; mix-blend-mode: screen; opacity: 0.03;
+      background: linear-gradient(90deg, rgba(255,0,0,0.2), transparent 30%, transparent 70%, rgba(0,255,255,0.2)); }
+    .app { position: relative; z-index: 10; display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+    @media (max-width: 960px) { .app { grid-template-columns: 1fr; } }
+
+  /* Sidebar command tower */
+    .tower {
+      border-right: 1px solid rgba(1, 205, 254, 0.25);
+      background: linear-gradient(180deg, rgba(15,23,42,0.92), rgba(3,7,18,0.95));
+      backdrop-filter: blur(20px);
       padding: 1.25rem;
-      background: var(--glass);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
+      display: flex; flex-direction: column; gap: 1rem;
+      position: relative; overflow: hidden;
     }
-    @media (max-width: 900px) {
-      .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+    .tower::before {
+      content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--cyan), var(--pink), transparent);
+      animation: sweepX 4s linear infinite;
     }
-    .brand {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      font-size: 0.85rem;
-      letter-spacing: 0.2em;
-      color: var(--cyan);
-      text-shadow: 0 0 12px var(--cyan), 0 0 24px rgba(0, 255, 255, 0.4);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+    @keyframes sweepX { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+    .logo {
+      display: flex; align-items: center; gap: 0.65rem;
+      font-size: 0.95rem; letter-spacing: 0.18em; color: var(--cyan-bright);
+      text-shadow: 0 0 20px var(--cyan), 0 0 40px rgba(1,205,254,0.4);
     }
-    .brand svg { flex-shrink: 0; filter: drop-shadow(0 0 6px var(--cyan)); }
-    .stat-card {
-      position: relative;
-      padding: 1rem 1.1rem;
-      border-radius: 12px;
-      background: linear-gradient(135deg, rgba(0, 255, 255, 0.08), rgba(0, 0, 0, 0.35));
-      border: 1px solid var(--border);
-      box-shadow: var(--glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    .logo svg { filter: drop-shadow(0 0 8px var(--cyan)); animation: iconPulse 3s ease-in-out infinite; }
+    @keyframes iconPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; filter: drop-shadow(0 0 16px var(--pink)); } }
+    .glitch-title {
+      font-size: 0.7rem; color: var(--pink); letter-spacing: 0.35em;
+      position: relative; display: inline-block;
     }
-    .stat-card::before, .stat-card::after {
-      content: "";
-      position: absolute;
-      width: 12px;
-      height: 12px;
-      border-color: var(--cyan);
-      border-style: solid;
-      opacity: 0.7;
+    .glitch-title::before, .glitch-title::after {
+      content: attr(data-text); position: absolute; left: 0; top: 0; width: 100%; overflow: hidden;
     }
-    .stat-card::before { top: 6px; left: 6px; border-width: 2px 0 0 2px; }
-    .stat-card::after { bottom: 6px; right: 6px; border-width: 0 2px 2px 0; }
-    .stat-label {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--muted);
-      font-family: var(--font-mono);
+    .glitch-title::before { color: var(--cyan); animation: glitch1 2.5s infinite linear alternate-reverse; clip-path: inset(0 0 60% 0); }
+    .glitch-title::after { color: var(--magenta); animation: glitch2 3s infinite linear alternate-reverse; clip-path: inset(40% 0 0 0); }
+    @keyframes glitch1 { 0% { transform: translate(0); } 20% { transform: translate(-2px, 1px); } 40% { transform: translate(2px, -1px); } 60% { transform: translate(-1px, 2px); } 100% { transform: translate(0); } }
+    @keyframes glitch2 { 0% { transform: translate(0); } 25% { transform: translate(2px, -2px); } 50% { transform: translate(-2px, 1px); } 100% { transform: translate(0); } }
+
+    .hud-card {
+      position: relative; padding: 1rem; border-radius: 12px;
+      background: var(--panel); border: 1px solid rgba(1,205,254,0.3);
+      box-shadow: 0 0 30px rgba(1,205,254,0.08), inset 0 0 40px rgba(1,205,254,0.03);
+      overflow: hidden;
     }
-    .stat-value {
-      font-family: var(--font-mono);
-      font-size: 2.5rem;
-      font-weight: 600;
-      line-height: 1.1;
-      margin: 0.25rem 0;
-      color: var(--text);
-      text-shadow: 0 0 16px rgba(0, 255, 255, 0.5);
+    .hud-card::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(180deg, transparent 0%, rgba(1,205,254,0.06) 50%, transparent 100%);
+      animation: cardScan 5s ease-in-out infinite; pointer-events: none;
     }
-    .stat-value.pulse { animation: countPulse 0.5s ease; }
-    @keyframes countPulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.06); color: var(--cyan); }
+    @keyframes cardScan { 0%,100% { transform: translateY(-100%); opacity: 0; } 50% { transform: translateY(100%); opacity: 1; } }
+    .hud-card .corner { position: absolute; width: 14px; height: 14px; border: 2px solid var(--cyan); opacity: 0.8; }
+    .hud-card .c-tl { top: 4px; left: 4px; border-right: none; border-bottom: none; }
+    .hud-card .c-br { bottom: 4px; right: 4px; border-left: none; border-top: none; }
+    .label { font-size: 0.65rem; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; }
+    .mega-num {
+      font-family: var(--font-code); font-size: 3rem; font-weight: 700; line-height: 1;
+      background: linear-gradient(180deg, #fff, var(--cyan));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 0 12px rgba(1,205,254,0.6));
+      transition: transform 0.3s;
     }
-    .status-row {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.75rem;
-      color: var(--muted);
-      font-family: var(--font-mono);
+    .mega-num.burst { animation: numBurst 0.6s ease; }
+    @keyframes numBurst { 0% { transform: scale(1); } 40% { transform: scale(1.15); filter: drop-shadow(0 0 24px var(--mint)); } 100% { transform: scale(1); } }
+
+    .radar-wrap { height: 100px; position: relative; display: flex; align-items: center; justify-content: center; }
+    .radar {
+      width: 88px; height: 88px; border-radius: 50%;
+      border: 1px solid rgba(1,205,254,0.4);
+      background: radial-gradient(circle, rgba(1,205,254,0.15) 0%, transparent 70%);
+      position: relative; overflow: hidden;
     }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 10px var(--green);
-      animation: blink 2s ease-in-out infinite;
+    .radar::before {
+      content: ""; position: absolute; inset: 0; border-radius: 50%;
+      background: conic-gradient(from 0deg, transparent 0deg, rgba(1,205,254,0.5) 40deg, transparent 80deg);
+      animation: radarSpin 3s linear infinite;
     }
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
+    @keyframes radarSpin { to { transform: rotate(360deg); } }
+    .radar-blip {
+      position: absolute; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--mint); box-shadow: 0 0 10px var(--mint);
+      animation: blip 2s ease-in-out infinite;
     }
-    .main {
-      padding: 1.25rem 1.5rem 2rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      min-width: 0;
+    .radar-blip:nth-child(1) { top: 25%; left: 60%; animation-delay: 0s; }
+    .radar-blip:nth-child(2) { top: 55%; left: 30%; animation-delay: 0.7s; }
+    .radar-blip:nth-child(3) { top: 40%; left: 75%; animation-delay: 1.4s; }
+    @keyframes blip { 0%,100% { opacity: 0.2; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.2); } }
+
+    .meter { margin-top: 0.5rem; }
+    .meter-track {
+      height: 6px; border-radius: 3px; background: rgba(30,41,59,0.9); overflow: hidden;
+      border: 1px solid rgba(1,205,254,0.2);
     }
-    .topbar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 1rem;
+    .meter-fill {
+      height: 100%; width: 0%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--purple), var(--cyan), var(--mint));
+      box-shadow: 0 0 12px var(--cyan);
+      transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    .topbar h1 {
-      margin: 0;
-      font-size: clamp(1.25rem, 3vw, 1.75rem);
-      font-weight: 600;
-      letter-spacing: -0.02em;
+    .lane-meters { display: grid; gap: 0.4rem; font-size: 0.65rem; }
+    .lane-meter-row { display: grid; grid-template-columns: 72px 1fr 24px; align-items: center; gap: 0.35rem; color: var(--muted); }
+    .lane-meter-bar { height: 4px; background: rgba(30,41,59,0.8); border-radius: 2px; overflow: hidden; }
+    .lane-meter-bar i { display: block; height: 100%; width: 0%; transition: width 0.4s ease; border-radius: 2px; }
+
+    .status-pill {
+      display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem; color: var(--mint);
+      padding: 0.4rem 0.6rem; border-radius: 6px;
+      background: rgba(5,255,161,0.08); border: 1px solid rgba(5,255,161,0.25);
     }
-    .topbar h1 span {
-      display: block;
-      font-size: 0.75rem;
-      font-weight: 400;
-      color: var(--muted);
-      font-family: var(--font-mono);
-      letter-spacing: 0.08em;
-      margin-top: 0.25rem;
+    .pulse-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--mint);
+      box-shadow: 0 0 12px var(--mint); animation: pulseDot 1.5s ease-in-out infinite;
     }
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: center;
+    @keyframes pulseDot { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.5; } }
+
+  /* Main deck */
+    .deck-main { padding: 1rem 1.25rem 5rem; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+    .command-header {
+      display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem;
+      padding-bottom: 0.75rem; border-bottom: 1px solid rgba(1,205,254,0.15);
     }
-    .search-wrap {
-      position: relative;
-      flex: 1;
-      min-width: 200px;
+    .command-header h1 {
+      margin: 0; font-size: clamp(1.4rem, 3vw, 2rem); font-weight: 400;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      background: linear-gradient(90deg, var(--text), var(--cyan), var(--pink));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
     }
-    .search-wrap svg {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      opacity: 0.5;
-      pointer-events: none;
+    .command-header .sub { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.12em; margin-top: 0.35rem; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .btn {
+      font-family: var(--font-code); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 0.55rem 1rem; border-radius: 6px; cursor: pointer; position: relative; overflow: hidden;
+      border: 1px solid rgba(1,205,254,0.5); color: var(--cyan); background: rgba(1,205,254,0.06);
+      transition: box-shadow 0.25s, transform 0.2s, background 0.25s;
+    }
+    .btn::before {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.12) 50%, transparent 60%);
+      transform: translateX(-100%); transition: transform 0.5s;
+    }
+    .btn:hover::before { transform: translateX(100%); }
+    .btn:hover { box-shadow: 0 0 24px rgba(1,205,254,0.4); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    .btn.loading { pointer-events: none; opacity: 0.7; }
+    .btn-ghost { border-color: rgba(148,163,184,0.35); color: var(--muted); background: transparent; }
+    .btn-done { border-color: rgba(5,255,161,0.5); color: var(--mint); background: rgba(5,255,161,0.08); }
+    .btn-done:hover { box-shadow: 0 0 20px rgba(5,255,161,0.35); }
+    .btn-danger { border-color: rgba(248,113,113,0.5); color: #fca5a5; background: rgba(239,68,68,0.08); }
+
+    .search-hero {
+      position: relative; padding: 0.15rem; border-radius: 12px;
+      background: linear-gradient(90deg, var(--cyan), var(--pink), var(--purple), var(--cyan));
+      background-size: 300% 100%; animation: borderFlow 6s linear infinite;
+    }
+    @keyframes borderFlow { 0% { background-position: 0% 50%; } 100% { background-position: 300% 50%; } }
+    .search-inner {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: rgba(3,7,18,0.95); border-radius: 10px; padding: 0.5rem 0.75rem;
     }
     #q {
-      width: 100%;
-      padding: 0.65rem 0.75rem 0.65rem 2.5rem;
-      border-radius: 10px;
-      border: 1px solid rgba(0, 255, 255, 0.25);
-      background: rgba(2, 6, 23, 0.85);
-      color: var(--text);
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      flex: 1; border: none; background: transparent; color: var(--text);
+      font-family: var(--font-code); font-size: 0.9rem; outline: none;
     }
-    #q:focus {
-      outline: none;
-      border-color: var(--cyan);
-      box-shadow: 0 0 0 3px rgba(0, 255, 255, 0.15);
+    .kbd { font-size: 0.6rem; padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid rgba(148,163,184,0.4); color: var(--muted); }
+
+    .telemetry {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.65rem;
     }
-    .btn {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      font-weight: 500;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 0.55rem 1rem;
-      border-radius: 8px;
-      border: 1px solid var(--cyan);
-      background: rgba(0, 255, 255, 0.08);
-      color: var(--cyan);
-      cursor: pointer;
-      transition: background 0.2s, box-shadow 0.2s, color 0.2s;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
+    .tel-chip {
+      padding: 0.6rem 0.75rem; border-radius: 8px;
+      background: rgba(15,23,42,0.8); border: 1px solid rgba(1,205,254,0.2);
+      font-size: 0.65rem; letter-spacing: 0.08em;
     }
-    .btn:hover {
-      background: rgba(0, 255, 255, 0.18);
-      box-shadow: 0 0 16px rgba(0, 255, 255, 0.35);
+    .tel-chip strong { display: block; font-family: var(--font-code); font-size: 1.1rem; color: var(--cyan); margin-top: 0.2rem; }
+
+    .panels {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;
     }
-    .btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-    .btn-ghost {
-      border-color: rgba(148, 163, 184, 0.4);
-      color: var(--muted);
-      background: transparent;
-    }
-    .btn-ghost:hover { color: var(--text); border-color: var(--muted); box-shadow: none; }
-    .btn-done {
-      border-color: var(--green);
-      color: var(--green);
-      background: rgba(34, 197, 94, 0.1);
-    }
-    .btn-done:hover { box-shadow: 0 0 14px rgba(34, 197, 94, 0.35); background: rgba(34, 197, 94, 0.2); }
-    .btn-danger {
-      border-color: rgba(248, 113, 113, 0.6);
-      color: #fca5a5;
-      background: rgba(239, 68, 68, 0.08);
-    }
-    .btn-danger:hover { box-shadow: 0 0 14px rgba(239, 68, 68, 0.3); }
-    .deck {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1rem;
-    }
-    @media (max-width: 1100px) { .deck { grid-template-columns: 1fr; } }
-    .deck .span-all { grid-column: 1 / -1; }
+    @media (max-width: 1100px) { .panels { grid-template-columns: 1fr; } }
+    .panels .span-all { grid-column: 1 / -1; }
+
     .panel {
       --accent: var(--cyan);
-      position: relative;
-      border-radius: 14px;
-      padding: 1rem 1rem 0.75rem;
-      background: var(--glass);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-      box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 12%, transparent), inset 0 1px 0 rgba(255,255,255,0.05);
-      min-height: 200px;
-      display: flex;
-      flex-direction: column;
+      position: relative; border-radius: 14px; min-height: 220px;
+      background: var(--panel); backdrop-filter: blur(16px);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      display: flex; flex-direction: column;
+      transition: box-shadow 0.35s, border-color 0.35s;
+      animation: panelIn 0.6s ease backwards;
     }
+    .panel:nth-child(1) { animation-delay: 0.05s; }
+    .panel:nth-child(2) { animation-delay: 0.1s; }
+    .panel:nth-child(3) { animation-delay: 0.15s; }
+    .panel:nth-child(4) { animation-delay: 0.2s; }
+    .panel:nth-child(5) { animation-delay: 0.25s; }
+    @keyframes panelIn { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
+    .panel.signal-flash { animation: panelFlash 0.8s ease; }
+    @keyframes panelFlash { 0%,100% { box-shadow: 0 0 0 transparent; } 50% { box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 50%, transparent); } }
     .panel[data-lane="tasks"] { --accent: var(--orange); }
     .panel[data-lane="reminders"] { --accent: var(--magenta); }
     .panel[data-lane="email"] { --accent: var(--email); }
-    .panel[data-lane="done"] { --accent: var(--done); }
+    .panel[data-lane="done"] { --accent: var(--mint); }
+    .panel:hover { box-shadow: 0 0 35px color-mix(in srgb, var(--accent) 20%, transparent); }
+
     .panel-head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 0.5rem;
-      margin-bottom: 0.75rem;
-      padding-bottom: 0.65rem;
-      border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+      padding: 0.85rem 1rem; display: flex; justify-content: space-between; align-items: flex-start;
+      border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
     }
     .panel-title {
-      margin: 0;
-      font-size: 0.8rem;
-      font-family: var(--font-mono);
-      font-weight: 600;
-      letter-spacing: 0.14em;
-      color: var(--accent);
-      text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 50%, transparent);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      margin: 0; font-size: 0.78rem; letter-spacing: 0.16em; color: var(--accent);
+      text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);
+      display: flex; align-items: center; gap: 0.45rem;
     }
-    .panel-title svg { opacity: 0.9; }
-    .panel-meta {
-      font-size: 0.65rem;
-      color: var(--muted);
-      font-family: var(--font-mono);
-      text-align: right;
-      line-height: 1.4;
+    .badge {
+      font-family: var(--font-code); font-size: 0.72rem; padding: 0.2rem 0.5rem;
+      border-radius: 4px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
     }
-    .badge-count {
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      padding: 0.15rem 0.45rem;
-      border-radius: 6px;
-      background: color-mix(in srgb, var(--accent) 15%, transparent);
-      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-      color: var(--accent);
-    }
-    .list {
-      flex: 1;
-      overflow: auto;
-      max-height: min(36vh, 420px);
-      padding-right: 4px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--accent) transparent;
-    }
-    .list::-webkit-scrollbar { width: 6px; }
-    .list::-webkit-scrollbar-thumb {
-      background: color-mix(in srgb, var(--accent) 50%, transparent);
-      border-radius: 3px;
-    }
+    .panel-hint { font-size: 0.6rem; color: var(--muted); text-align: right; line-height: 1.4; }
+
+    .list { flex: 1; overflow: auto; max-height: min(32vh, 380px); padding: 0.65rem; }
+    .list::-webkit-scrollbar { width: 5px; }
+    .list::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+
     .item {
-      position: relative;
-      padding: 0.85rem 0.85rem 0.85rem 1rem;
-      margin-bottom: 0.65rem;
-      border-radius: 10px;
-      background: rgba(2, 6, 23, 0.75);
-      border: 1px solid rgba(51, 65, 85, 0.8);
-      border-left: 3px solid var(--accent);
-      transition: border-color 0.2s, box-shadow 0.2s;
+      --i: 0;
+      position: relative; padding: 0.85rem 0.85rem 0.85rem 1rem; margin-bottom: 0.6rem;
+      border-radius: 10px; background: rgba(3,7,18,0.85);
+      border: 1px solid rgba(51,65,85,0.7); border-left: 3px solid var(--accent);
+      animation: itemIn 0.45s ease backwards;
+      animation-delay: calc(var(--i) * 0.04s);
+      transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
     }
+    @keyframes itemIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
     .item:hover {
-      border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-      box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 15%, transparent);
+      transform: translateX(4px);
+      box-shadow: -4px 0 20px color-mix(in srgb, var(--accent) 25%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
     }
-    .item.done {
-      opacity: 0.75;
-      border-left-color: var(--done);
+    .item.new-signal::after {
+      content: "NEW"; position: absolute; top: 8px; right: 8px; font-size: 0.55rem;
+      padding: 0.1rem 0.35rem; background: var(--mint); color: #000; font-weight: 700;
+      border-radius: 3px; animation: newTag 1.5s ease infinite;
     }
-    .item-top {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.35rem;
-    }
+    @keyframes newTag { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .item.done { opacity: 0.7; }
+    .item-top { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin-bottom: 0.3rem; }
     .pill {
-      font-family: var(--font-mono);
-      font-size: 0.65rem;
-      font-weight: 600;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      border: 1px solid var(--orange);
-      color: var(--orange);
-      background: rgba(255, 159, 64, 0.1);
-      letter-spacing: 0.05em;
+      font-size: 0.62rem; font-weight: 600; padding: 0.15rem 0.45rem; border-radius: 3px;
+      border: 1px solid var(--orange); color: var(--orange); background: rgba(255,159,64,0.1);
     }
-    .path {
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text);
-      word-break: break-all;
+    .path { font-family: var(--font-code); font-size: 0.82rem; word-break: break-all; }
+    .time { font-size: 0.65rem; color: var(--muted); margin-bottom: 0.35rem; }
+    .preview { font-size: 0.78rem; color: #cbd5e1; line-height: 1.45; word-break: break-word; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
+    .empty { padding: 2rem 1rem; text-align: center; color: var(--muted); font-size: 0.75rem; line-height: 1.7; }
+    .empty code { color: var(--accent); background: rgba(0,0,0,0.4); padding: 0.15rem 0.35rem; border-radius: 4px; }
+
+    .skeleton { height: 72px; border-radius: 8px; margin-bottom: 0.5rem;
+      background: linear-gradient(90deg, rgba(30,41,59,0.5) 25%, rgba(51,65,85,0.8) 50%, rgba(30,41,59,0.5) 75%);
+      background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    .ticker-wrap {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      background: linear-gradient(0deg, rgba(3,7,18,0.98), rgba(3,7,18,0.85));
+      border-top: 1px solid rgba(1,205,254,0.25); padding: 0.45rem 0; overflow: hidden;
     }
-    .time {
-      font-size: 0.7rem;
-      color: var(--muted);
-      font-family: var(--font-mono);
+    .ticker {
+      display: flex; gap: 3rem; white-space: nowrap; animation: ticker 40s linear infinite;
+      font-size: 0.68rem; color: var(--muted); letter-spacing: 0.08em;
     }
-    .preview {
-      font-size: 0.8rem;
-      color: #cbd5e1;
-      margin: 0.5rem 0;
-      line-height: 1.45;
-      word-break: break-word;
-    }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-    .empty {
-      padding: 2rem 1rem;
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.8rem;
-      font-family: var(--font-mono);
-      line-height: 1.6;
-    }
-    .empty code {
-      color: var(--accent);
-      background: rgba(0,0,0,0.3);
-      padding: 0.15rem 0.35rem;
-      border-radius: 4px;
-    }
+    @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+    .ticker span { color: var(--cyan); }
+
+    .toast-stack { position: fixed; top: 1rem; right: 1rem; z-index: 200; display: flex; flex-direction: column; gap: 0.5rem; }
     .toast {
-      position: fixed;
-      bottom: 1.5rem;
-      right: 1.5rem;
-      z-index: 9999;
-      padding: 0.75rem 1.25rem;
-      border-radius: 10px;
-      border: 1px solid var(--cyan);
-      background: rgba(15, 23, 42, 0.95);
-      backdrop-filter: blur(12px);
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      color: var(--cyan);
-      box-shadow: var(--glow);
-      opacity: 0;
-      transform: translateY(12px);
-      pointer-events: none;
-      transition: opacity 0.3s, transform 0.3s;
+      padding: 0.75rem 1.1rem; border-radius: 8px; font-size: 0.75rem; letter-spacing: 0.06em;
+      border: 1px solid var(--cyan); background: rgba(15,23,42,0.95); backdrop-filter: blur(12px);
+      color: var(--cyan); box-shadow: 0 0 30px rgba(1,205,254,0.3);
+      animation: toastIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    .toast.show { opacity: 1; transform: translateY(0); }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+
+    .fx-toggle { font-size: 0.6rem; }
+
     @media (prefers-reduced-motion: reduce) {
-      .status-dot, .stat-value.pulse { animation: none; }
-      .toast { transition: none; }
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+      #particles { display: none; }
+      .ticker { animation: none; }
     }
   </style>
 </head>
 <body>
-  <div class="bg-grid" aria-hidden="true"></div>
+  <canvas id="particles" aria-hidden="true"></canvas>
+  <canvas id="horizon" aria-hidden="true"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
   <div class="scanlines" aria-hidden="true"></div>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div class="chromatic" aria-hidden="true"></div>
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
   <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-        </svg>
-        TRON // WEBHOOK GRID
+    <aside class="tower">
+      <div>
+        <div class="logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          TRON GRID
+        </div>
+        <span class="glitch-title" data-text="WEBHOOK COMMAND">WEBHOOK COMMAND</span>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Live feed</div>
-        <div id="count" class="stat-value">0</div>
-        <small class="stat-label">Total POST events</small>
+
+      <div class="hud-card">
+        <span class="corner c-tl"></span><span class="corner c-br"></span>
+        <div class="label">Signal count</div>
+        <div id="count" class="mega-num">0</div>
+        <div class="label" style="margin-top:0.35rem">POST/PUSH events tracked</div>
+        <div class="meter"><div class="meter-track"><div id="meterFill" class="meter-fill"></div></div></div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Done purge</div>
-        <div class="stat-value" style="font-size:1.75rem">01:00</div>
-        <small class="stat-label">Auto-clear after 1 AM local</small>
+
+      <div class="hud-card">
+        <span class="corner c-tl"></span><span class="corner c-br"></span>
+        <div class="label">Threat radar</div>
+        <div class="radar-wrap">
+          <div class="radar" aria-hidden="true">
+            <span class="radar-blip"></span><span class="radar-blip"></span><span class="radar-blip"></span>
+          </div>
+        </div>
+        <div class="lane-meters" id="laneMeters"></div>
       </div>
-      <div class="status-row">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span id="statusText">Grid online · polling 4s</span>
+
+      <div class="hud-card">
+        <div class="label">System clock</div>
+        <div id="clock" class="mega-num" style="font-size:1.4rem">--:--:--</div>
+        <div class="label">Purge window 01:00 local</div>
       </div>
+
+      <div class="status-pill">
+        <span class="pulse-dot"></span>
+        <span id="statusText">Initializing grid…</span>
+      </div>
+
+      <label class="fx-toggle label" style="cursor:pointer;display:flex;align-items:center;gap:0.4rem">
+        <input type="checkbox" id="fxToggle" checked> Hyper effects
+      </label>
     </aside>
 
-    <main class="main">
-      <header class="topbar">
-        <h1>
-          Task + Reminder Command Deck
-          <span>Universal webhook collector · port 9876</span>
-        </h1>
+    <main class="deck-main">
+      <header class="command-header">
+        <div>
+          <h1>Command Deck</h1>
+          <p class="sub">Real-time webhook interception · localhost:9876</p>
+        </div>
         <div class="toolbar">
-          <button type="button" class="btn" onclick="refresh()" aria-label="Refresh events">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-            Sync
-          </button>
+          <button type="button" class="btn" id="btnSync" onclick="refresh(true)">Sync grid</button>
+          <button type="button" class="btn btn-ghost" onclick="toggleCompact()">Compact</button>
         </div>
       </header>
 
-      <div class="search-wrap">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input id="q" type="search" placeholder="Filter path / method / body…" aria-label="Filter events" autocomplete="off">
+      <div class="search-hero">
+        <div class="search-inner">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input id="q" type="search" placeholder="Scan path · method · payload…" aria-label="Filter events" autocomplete="off">
+          <span class="kbd">/</span>
+        </div>
       </div>
 
-      <div class="deck">
-        <section class="panel" data-lane="active">
+      <div class="telemetry">
+        <div class="tel-chip"><span class="label">Open signals</span><strong id="telOpen">0</strong></div>
+        <div class="tel-chip"><span class="label">Archived today</span><strong id="telDone">0</strong></div>
+        <div class="tel-chip"><span class="label">Throughput / min</span><strong id="telRate">0</strong></div>
+        <div class="tel-chip"><span class="label">Last ping</span><strong id="telLast" style="font-size:0.75rem">—</strong></div>
+      </div>
+
+      <div class="panels" id="panels">
+        <section class="panel" data-lane="active" id="panel-active">
           <div class="panel-head">
-            <h2 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-              Active Queue
-            </h2>
-            <div class="panel-meta"><span class="badge-count" id="badge-active">0</span><br>catch-all paths</div>
+            <h2 class="panel-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Active Queue</h2>
+            <div><span class="badge" id="badge-active">0</span><div class="panel-hint">catch-all paths</div></div>
           </div>
           <div id="active" class="list" role="list"></div>
         </section>
-
-        <section class="panel" data-lane="tasks">
+        <section class="panel" data-lane="tasks" id="panel-tasks">
           <div class="panel-head">
-            <h2 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              Tasks
-            </h2>
-            <div class="panel-meta"><span class="badge-count" id="badge-tasks">0</span><br>POST /tasks</div>
+            <h2 class="panel-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Tasks</h2>
+            <div><span class="badge" id="badge-tasks">0</span><div class="panel-hint">POST /tasks</div></div>
           </div>
           <div id="tasks" class="list" role="list"></div>
         </section>
-
-        <section class="panel" data-lane="reminders">
+        <section class="panel" data-lane="reminders" id="panel-reminders">
           <div class="panel-head">
-            <h2 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-              Reminders
-            </h2>
-            <div class="panel-meta"><span class="badge-count" id="badge-reminders">0</span><br>POST /reminders</div>
+            <h2 class="panel-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Reminders</h2>
+            <div><span class="badge" id="badge-reminders">0</span><div class="panel-hint">POST /reminders</div></div>
           </div>
           <div id="reminders" class="list" role="list"></div>
         </section>
-
-        <section class="panel" data-lane="email">
+        <section class="panel" data-lane="email" id="panel-email">
           <div class="panel-head">
-            <h2 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="m22 6-10 7L2 6"/></svg>
-              Email
-            </h2>
-            <div class="panel-meta"><span class="badge-count" id="badge-email">0</span><br>POST /email</div>
+            <h2 class="panel-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="m22 6-10 7L2 6"/></svg> Email</h2>
+            <div><span class="badge" id="badge-email">0</span><div class="panel-hint">POST /email</div></div>
           </div>
           <div id="email" class="list" role="list"></div>
         </section>
-
-        <section class="panel span-all" data-lane="done">
+        <section class="panel span-all" data-lane="done" id="panel-done">
           <div class="panel-head">
-            <h2 class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
-              Done Today
-            </h2>
-            <div class="panel-meta"><span class="badge-count" id="badge-done">0</span><br>completed archive</div>
+            <h2 class="panel-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg> Done Today</h2>
+            <div><span class="badge" id="badge-done">0</span><div class="panel-hint">completed archive</div></div>
           </div>
-          <div id="done" class="list" role="list" style="max-height:28vh"></div>
+          <div id="done" class="list" role="list" style="max-height:24vh"></div>
         </section>
       </div>
     </main>
   </div>
 
+  <div class="ticker-wrap" aria-hidden="true">
+    <div class="ticker" id="ticker">Awaiting signals on the grid…</div>
+  </div>
+
   <script>
     let events = [];
-    let lastCount = -1;
+    let lastCount = -1; /* -1 = first paint, skip NEW badges */
+    let lastMaxId = 0;
+    let rateHistory = [];
+    let loading = true;
+    let hyperFx = true;
+    let compact = false;
     const pushMethods = new Set(['POST', 'PUSH']);
-
+    const LANE_COLORS = { active: '#01cdfe', tasks: '#ff9f40', reminders: '#ff00ff', email: '#4ade80' };
     const LANES = [
-      { key: 'active', el: 'active', badge: 'badge-active', empty: 'No active items in the catch-all queue.', hint: '/test' },
-      { key: 'tasks', el: 'tasks', badge: 'badge-tasks', empty: 'No tasks yet.', hint: '/tasks' },
-      { key: 'reminders', el: 'reminders', badge: 'badge-reminders', empty: 'No reminders yet.', hint: '/reminders' },
-      { key: 'email', el: 'email', badge: 'badge-email', empty: 'No email payloads yet.', hint: '/email' },
+      { key: 'active', el: 'active', panel: 'panel-active', badge: 'badge-active', empty: 'No signals in catch-all queue.', hint: '/test' },
+      { key: 'tasks', el: 'tasks', panel: 'panel-tasks', badge: 'badge-tasks', empty: 'Task lane empty.', hint: '/tasks' },
+      { key: 'reminders', el: 'reminders', panel: 'panel-reminders', badge: 'badge-reminders', empty: 'Reminder lane empty.', hint: '/reminders' },
+      { key: 'email', el: 'email', panel: 'panel-email', badge: 'badge-email', empty: 'Email lane empty.', hint: '/email' },
     ];
 
     function isPush(e) { return pushMethods.has((e.method || '').toUpperCase()); }
@@ -578,19 +498,34 @@
       return !q || `${e.path} ${e.method} ${e.preview || ''}`.toLowerCase().includes(q);
     }
 
-    function renderActive(e) {
-      return `<article class="item" role="listitem">
+    function toast(msg) {
+      const stack = document.getElementById('toastStack');
+      const el = document.createElement('div');
+      el.className = 'toast';
+      el.textContent = msg;
+      stack.appendChild(el);
+      setTimeout(() => el.remove(), 3200);
+    }
+
+    function flashPanel(laneKey) {
+      const p = document.getElementById('panel-' + (laneKey === 'active' ? 'active' : laneKey));
+      if (!p) return;
+      p.classList.remove('signal-flash');
+      void p.offsetWidth;
+      p.classList.add('signal-flash');
+    }
+
+    function renderActive(e, i, isNew) {
+      return `<article class="item${isNew ? ' new-signal' : ''}" role="listitem" style="--i:${i}">
         <div class="item-top"><span class="pill">${esc(e.method)}</span><span class="path">${esc(e.path)}</span></div>
         <div class="time">${new Date(e.received_at * 1000).toLocaleString()}</div>
         <div class="preview">${esc(e.preview || '')}</div>
-        <div class="actions">
-          <button type="button" class="btn btn-done" onclick="toggleDone(${e.id},true)">Mark Done</button>
-        </div>
+        <div class="actions"><button type="button" class="btn btn-done" onclick="toggleDone(${e.id},true)">Mark Done</button></div>
       </article>`;
     }
 
-    function renderDone(e) {
-      return `<article class="item done" role="listitem">
+    function renderDone(e, i) {
+      return `<article class="item done" role="listitem" style="--i:${i}">
         <div class="item-top"><span class="pill">${esc(e.method)}</span><span class="path">${esc(e.path)}</span></div>
         <div class="time">done ${new Date((e.done_at || e.received_at) * 1000).toLocaleString()}</div>
         <div class="actions">
@@ -604,26 +539,39 @@
       return `<div class="empty">${esc(msg)}<br><code>POST ${esc(hint)}</code></div>`;
     }
 
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.classList.add('show');
-      clearTimeout(showToast._tid);
-      showToast._tid = setTimeout(() => t.classList.remove('show'), 2800);
+    function skeletonList(n) {
+      return Array(n).fill('<div class="skeleton"></div>').join('');
     }
 
-    async function toggleDone(id, done) {
-      await fetch('/api/events/' + id + '/done', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ done }),
-      });
-      refresh();
+    function updateLaneMeters(lanes) {
+      const max = Math.max(1, ...Object.values(lanes).map(a => a.length));
+      const html = LANES.map(l => {
+        const n = lanes[l.key].length;
+        const pct = Math.round((n / max) * 100);
+        const col = LANE_COLORS[l.key];
+        return `<div class="lane-meter-row"><span>${l.key}</span><div class="lane-meter-bar"><i style="width:${pct}%;background:${col}"></i></div><span>${n}</span></div>`;
+      }).join('');
+      document.getElementById('laneMeters').innerHTML = html;
     }
 
-    async function removeEvent(id) {
-      await fetch('/api/events/' + id, { method: 'DELETE' });
-      refresh();
+    function updateTicker(list) {
+      const recent = list.slice(0, 12);
+      const text = recent.length
+        ? recent.map(e => `<span>${esc(e.method)} ${esc(e.path)}</span> · ${esc((e.preview || '').slice(0, 40))}`).join(' &nbsp;&nbsp;|&nbsp;&nbsp; ')
+        : 'Awaiting signals on the grid…';
+      const tick = document.getElementById('ticker');
+      tick.innerHTML = text + ' &nbsp;&nbsp;|&nbsp;&nbsp; ' + text;
+    }
+
+    function updateTelemetry(open, done, rate) {
+      document.getElementById('telOpen').textContent = open.length;
+      document.getElementById('telDone').textContent = done.length;
+      document.getElementById('telRate').textContent = rate;
+      const last = events[0];
+      document.getElementById('telLast').textContent = last
+        ? new Date(last.received_at * 1000).toLocaleTimeString()
+        : '—';
+      document.getElementById('meterFill').style.width = Math.min(100, events.length * 4) + '%';
     }
 
     function draw() {
@@ -634,39 +582,167 @@
       const lanes = { active: [], tasks: [], reminders: [], email: [] };
       for (const e of open) lanes[laneForPath(e.path)].push(e);
 
+      const maxId = f.reduce((m, e) => Math.max(m, e.id), 0);
+      const newSince = lastMaxId;
+      if (lastCount < 0) lastMaxId = maxId;
+      else if (maxId > lastMaxId) lastMaxId = maxId;
+
       const countEl = document.getElementById('count');
       if (f.length !== lastCount && lastCount >= 0 && f.length > lastCount) {
-        showToast('+' + (f.length - lastCount) + ' signal(s) on the grid');
-        countEl.classList.add('pulse');
-        setTimeout(() => countEl.classList.remove('pulse'), 500);
+        const delta = f.length - lastCount;
+        toast(`${delta} new signal${delta > 1 ? 's' : ''} detected`);
+        countEl.classList.add('burst');
+        setTimeout(() => countEl.classList.remove('burst'), 600);
+        rateHistory.push(Date.now());
       }
       lastCount = f.length;
       countEl.textContent = f.length;
 
+      updateLaneMeters(lanes);
+      updateTicker(f);
+      const rate = rateHistory.filter(t => Date.now() - t < 60000).length;
+      updateTelemetry(open, done, rate);
+
       for (const lane of LANES) {
-        document.getElementById(lane.badge).textContent = lanes[lane.key].length;
-        document.getElementById(lane.el).innerHTML = lanes[lane.key].length
-          ? lanes[lane.key].map(renderActive).join('')
-          : emptyHtml(lane.empty, lane.hint);
+        const arr = lanes[lane.key];
+        document.getElementById(lane.badge).textContent = arr.length;
+        const el = document.getElementById(lane.el);
+        if (loading) {
+          el.innerHTML = skeletonList(2);
+        } else if (arr.length) {
+          el.innerHTML = arr.map((e, i) => renderActive(e, i, e.id > newSince)).join('');
+          if (newSince > 0 && arr.some(e => e.id > newSince)) flashPanel(lane.key);
+        } else {
+          el.innerHTML = emptyHtml(lane.empty, lane.hint);
+        }
       }
       document.getElementById('badge-done').textContent = done.length;
-      document.getElementById('done').innerHTML = done.length
-        ? done.map(renderDone).join('')
-        : emptyHtml('No completed tasks today.', '/any');
+      const doneEl = document.getElementById('done');
+      doneEl.innerHTML = loading ? skeletonList(2) : (done.length ? done.map((e, i) => renderDone(e, i)).join('') : emptyHtml('Archive empty.', '/any'));
+      loading = false;
     }
 
-    async function refresh() {
+    async function toggleDone(id, done) {
+      await fetch('/api/events/' + id + '/done', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ done }) });
+      refresh(true);
+    }
+    async function removeEvent(id) {
+      await fetch('/api/events/' + id, { method: 'DELETE' });
+      refresh(true);
+    }
+
+    function toggleCompact() {
+      compact = !compact;
+      document.getElementById('panels').style.gap = compact ? '0.5rem' : '1rem';
+      document.querySelectorAll('.list').forEach(l => l.style.maxHeight = compact ? '22vh' : '');
+    }
+
+    async function refresh(manual) {
+      const btn = document.getElementById('btnSync');
+      btn.classList.add('loading');
       try {
         const r = await fetch('/api/events?limit=300');
         const data = await r.json();
         events = (data.events || []).filter(isPush);
-        document.getElementById('statusText').textContent = 'Grid online · ' + new Date().toLocaleTimeString();
+        document.getElementById('statusText').textContent = 'GRID ONLINE · ' + new Date().toLocaleTimeString();
         draw();
+        if (manual) toast('Grid synchronized');
       } catch (err) {
-        document.getElementById('statusText').textContent = 'Link severed · retrying…';
+        document.getElementById('statusText').textContent = 'LINK SEVERED';
+        document.getElementById('statusText').style.color = '#f87171';
+      } finally {
+        btn.classList.remove('loading');
       }
     }
 
+    function tickClock() {
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+    }
+
+    /* Particle field */
+    function initParticles() {
+      const c = document.getElementById('particles');
+      const ctx = c.getContext('2d');
+      let w, h, pts = [];
+      function resize() {
+        w = c.width = window.innerWidth;
+        h = c.height = window.innerHeight;
+      }
+      function mkPt() {
+        return { x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4, r: Math.random() * 1.5 + 0.5 };
+      }
+      function reset() {
+        resize();
+        pts = Array.from({ length: Math.min(120, Math.floor(w * h / 12000)) }, mkPt);
+      }
+      function frame() {
+        if (!hyperFx) { requestAnimationFrame(frame); return; }
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = 'rgba(1, 205, 254, 0.55)';
+        for (const p of pts) {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < 0 || p.x > w) p.vx *= -1;
+          if (p.y < 0 || p.y > h) p.vy *= -1;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.strokeStyle = 'rgba(1, 205, 254, 0.06)';
+        for (let i = 0; i < pts.length; i++) {
+          for (let j = i + 1; j < pts.length; j++) {
+            const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+            if (dx * dx + dy * dy < 9000) {
+              ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
+            }
+          }
+        }
+        requestAnimationFrame(frame);
+      }
+      window.addEventListener('resize', reset);
+      reset(); frame();
+    }
+
+    /* Synthwave horizon */
+    function initHorizon() {
+      const c = document.getElementById('horizon');
+      const ctx = c.getContext('2d');
+      let w, h, t = 0;
+      function resize() { w = c.width = window.innerWidth; h = c.height = window.innerHeight; }
+      function draw() {
+        if (!hyperFx) { requestAnimationFrame(draw); return; }
+        ctx.clearRect(0, 0, w, h);
+        const horizonY = h * 0.72;
+        const grd = ctx.createLinearGradient(0, horizonY, 0, h);
+        grd.addColorStop(0, 'rgba(255, 113, 206, 0.15)');
+        grd.addColorStop(1, 'rgba(3, 7, 18, 0)');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, horizonY, w, h - horizonY);
+        ctx.strokeStyle = 'rgba(1, 205, 254, 0.25)';
+        ctx.lineWidth = 1;
+        for (let i = -20; i <= 20; i++) {
+          const x1 = w / 2 + i * 40;
+          ctx.beginPath();
+          ctx.moveTo(w / 2, horizonY);
+          ctx.lineTo(x1 + Math.sin(t * 0.02 + i) * 10, h);
+          ctx.stroke();
+        }
+        for (let row = 0; row < 8; row++) {
+          const y = horizonY + row * ((h - horizonY) / 8) + (t % 20);
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w, y);
+          ctx.strokeStyle = `rgba(1, 205, 254, ${0.08 + row * 0.02})`;
+          ctx.stroke();
+        }
+        t += hyperFx ? 1.2 : 0;
+        requestAnimationFrame(draw);
+      }
+      window.addEventListener('resize', resize);
+      resize(); draw();
+    }
+
+    document.getElementById('fxToggle').addEventListener('change', e => {
+      hyperFx = e.target.checked;
+      document.body.classList.toggle('reduce-fx', !hyperFx);
+    });
     document.getElementById('q').addEventListener('input', draw);
     document.addEventListener('keydown', e => {
       if (e.key === '/' && document.activeElement !== document.getElementById('q')) {
@@ -674,7 +750,13 @@
         document.getElementById('q').focus();
       }
     });
+
+    tickClock();
+    setInterval(tickClock, 1000);
     setInterval(refresh, 4000);
+    setInterval(() => { rateHistory = rateHistory.filter(t => Date.now() - t < 60000); }, 15000);
+    initParticles();
+    initHorizon();
     refresh();
   </script>
 </body>
